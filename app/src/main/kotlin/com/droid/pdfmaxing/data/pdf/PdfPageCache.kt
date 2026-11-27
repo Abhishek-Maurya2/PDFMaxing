@@ -33,6 +33,16 @@ class PdfPageCache(maxMemoryBytes: Int = (Runtime.getRuntime().maxMemory() / 4).
         thumbnailCache.put("$docId-$pageIndex", bitmap)
     }
 
+    fun evictDocument(docId: String) {
+        val prefix = "$docId-"
+        pageBitmapCache.snapshot().keys
+            .filter { it.startsWith(prefix) }
+            .forEach { pageBitmapCache.remove(it) }
+        thumbnailCache.snapshot().keys
+            .filter { it.startsWith(prefix) }
+            .forEach { thumbnailCache.remove(it) }
+    }
+
     fun clear() {
         pageBitmapCache.evictAll()
         thumbnailCache.evictAll()

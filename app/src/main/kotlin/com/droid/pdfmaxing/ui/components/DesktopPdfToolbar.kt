@@ -3,29 +3,29 @@ package com.droid.pdfmaxing.ui.components
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.systemGestureExclusion
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsTopHeight
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.systemGestureExclusion
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.ViewSidebar
-import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowDropDown
 import androidx.compose.material.icons.rounded.AutoStories
 import androidx.compose.material.icons.rounded.Bedtime
@@ -33,8 +33,9 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.FitScreen
 import androidx.compose.material.icons.rounded.InvertColors
 import androidx.compose.material.icons.rounded.LightMode
-import androidx.compose.material.icons.rounded.MoreHoriz
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.PictureAsPdf
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.ZoomOut
 import androidx.compose.material3.ButtonGroup
 import androidx.compose.material3.ButtonGroupDefaults
@@ -45,8 +46,10 @@ import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FilledTonalIconToggleButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.IconButtonShapes
+import androidx.compose.material3.IconToggleButton
 import androidx.compose.material3.IconToggleButtonShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuDefaults
@@ -62,6 +65,7 @@ import androidx.compose.material3.TooltipBox
 import androidx.compose.material3.TooltipDefaults
 import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -75,6 +79,7 @@ import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.droid.pdfmaxing.ui.reader.PdfTab
 import com.droid.pdfmaxing.ui.reader.PdfViewLayoutMode
@@ -110,11 +115,22 @@ fun DesktopPdfToolbar(
     onSelectColorMode: (PdfColorMode) -> Unit = {},
     onCycleLayoutMode: () -> Unit = {},
     onSelectLayoutMode: (PdfViewLayoutMode) -> Unit = {},
+    onOpenSettings: () -> Unit = {},
     onOpenFileClick: (() -> Unit)? = null
 ) {
     val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val isFullscreen = statusBarTop > 0.dp
     val effectiveStartPadding = if (isFullscreen) 170.dp else startPadding
+    val tabListState = rememberLazyListState()
+    val effectsSpec = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
+    val spatialOffsetSpec = MaterialTheme.motionScheme.defaultSpatialSpec<IntOffset>()
+
+    LaunchedEffect(activeTabId, tabs.size) {
+        val idx = tabs.indexOfFirst { it.id == activeTabId }
+        if (idx >= 0) {
+            tabListState.animateScrollToItem(idx)
+        }
+    }
 
     Surface(
         modifier = modifier.fillMaxWidth(),
@@ -122,7 +138,6 @@ fun DesktopPdfToolbar(
         color = MaterialTheme.colorScheme.surfaceContainer
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
-            // Push toolbar content down below system status bar in fullscreen mode
             Spacer(modifier = Modifier.windowInsetsTopHeight(WindowInsets.statusBars))
 
             Row(
@@ -133,120 +148,120 @@ fun DesktopPdfToolbar(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-            // Left Group: Sidebar Toggle (Back button removed; tab system handles navigation)
-            FilledTonalIconToggleButton(
-                checked = isSidebarOpen,
-                onCheckedChange = { onToggleSidebar() },
-                shape = RoundedCornerShape(12.dp),
-                colors = IconButtonDefaults.filledTonalIconToggleButtonColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    checkedContainerColor = MaterialTheme.colorScheme.primary,
-                    checkedContentColor = MaterialTheme.colorScheme.onPrimary
-                ),
-                modifier = Modifier
-                    .padding(end = 6.dp)
-                    .size(width = 40.dp, height = 36.dp)
-                    .systemGestureExclusion()
-                    .pointerHoverIcon(PointerIcon.Hand)
-            ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Rounded.ViewSidebar,
-                    contentDescription = if (isSidebarOpen) "Hide Thumbnails" else "Show Thumbnails",
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-
-            // Center Group: Browser-Style Tabs & "+" New Tab Button (Unified with Titlebar)
-            if (tabs.isNotEmpty()) {
-                Row(
+                // Left Group: Sidebar Toggle
+                IconToggleButton(
+                    checked = isSidebarOpen,
+                    onCheckedChange = { onToggleSidebar() },
+                    shapes = IconButtonDefaults.toggleableShapes(),
                     modifier = Modifier
-                        .weight(1f)
-                        .horizontalScroll(rememberScrollState())
-                        .padding(horizontal = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Start
+                        .padding(end = 4.dp)
+                        .size(40.dp)
+                        .systemGestureExclusion()
+                        .pointerHoverIcon(PointerIcon.Hand)
                 ) {
-                    tabs.forEach { tab ->
-                        val isActive = tab.id == activeTabId
-                        PdfTabItem(
-                            tab = tab,
-                            isActive = isActive,
-                            onClick = { onSelectTab(tab.id) },
-                            onClose = { onCloseTab(tab.id) },
-                            modifier = Modifier.systemGestureExclusion()
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                    }
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Rounded.ViewSidebar,
+                        contentDescription = if (isSidebarOpen) "Hide Thumbnails" else "Show Thumbnails",
+                        tint = if (isSidebarOpen) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
 
-                    // New Tab "+" Button
-                    FilledTonalIconButton(
-                        onClick = onNewTabClick,
-                        shape = RoundedCornerShape(12.dp),
-                        colors = IconButtonDefaults.filledTonalIconButtonColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                            contentColor = MaterialTheme.colorScheme.primary
-                        ),
+                // Center Group: Chrome-Style Expressive Tabs & "+" New Tab Button
+                if (tabs.isNotEmpty()) {
+                    LazyRow(
+                        state = tabListState,
                         modifier = Modifier
-                            .size(34.dp)
+                            .weight(1f)
+                            .fillMaxHeight(),
+                        contentPadding = PaddingValues(horizontal = 4.dp),
+                        verticalAlignment = Alignment.Bottom,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        items(tabs, key = { it.id }) { tab ->
+                            val isActive = tab.id == activeTabId
+                            ExpressiveTabItem(
+                                tab = tab,
+                                isActive = isActive,
+                                onClick = { onSelectTab(tab.id) },
+                                onClose = { onCloseTab(tab.id) },
+                                modifier = Modifier.animateItem(
+                                    fadeInSpec = effectsSpec,
+                                    fadeOutSpec = effectsSpec,
+                                    placementSpec = spatialOffsetSpec
+                                )
+                            )
+                        }
+
+                        item(key = "desktop_new_tab") {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxHeight()
+                                    .padding(start = 2.dp, bottom = 5.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                NewTabButton(onClick = onNewTabClick)
+                            }
+                        }
+                    }
+                } else {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = 8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.PictureAsPdf,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = title,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+
+                // Right Group: Vibrant Options Menu (Theme + Layout submenus) & Settings
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier
+                        .systemGestureExclusion()
+                        .padding(start = 6.dp)
+                ) {
+                    ThemeVibrantMenu(
+                        activeColorMode = colorMode,
+                        onSelectColorMode = onSelectColorMode,
+                        activeLayoutMode = layoutMode,
+                        onSelectLayoutMode = onSelectLayoutMode
+                    )
+                    IconButton(
+                        onClick = onOpenSettings,
+                        modifier = Modifier
                             .systemGestureExclusion()
                             .pointerHoverIcon(PointerIcon.Hand)
                     ) {
                         Icon(
-                            imageVector = Icons.Rounded.Add,
-                            contentDescription = "New Tab",
-                            modifier = Modifier.size(18.dp)
+                            imageVector = Icons.Rounded.Settings,
+                            contentDescription = "Settings",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
                         )
                     }
                 }
-            } else {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(horizontal = 8.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.PictureAsPdf,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-
-            // Right Group: Material 3 Expressive Vibrant Theme Menu (Split button removed)
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .systemGestureExclusion()
-                    .padding(start = 6.dp)
-            ) {
-                // Official Material 3 Expressive Vibrant Menu for Theme Switcher (Opened via "..." Button)
-                ThemeVibrantMenu(
-                    activeColorMode = colorMode,
-                    onSelectColorMode = onSelectColorMode
-                )
             }
         }
     }
 }
-}
 
-/**
- * Official Material 3 Expressive Split Button for View Toggle (Fit 100%, 50% Overview, Two-Page Spread).
- *
- * Built using official androidx.compose.material3.SplitButtonLayout with TonalLeadingButton and TonalTrailingButton.
- */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun ViewToggleSplitButton(
@@ -309,7 +324,6 @@ fun ViewToggleSplitButton(
             }
         )
 
-        // Dropdown Menu displaying all layout choices
         DropdownMenu(
             expanded = menuExpanded,
             onDismissRequest = { menuExpanded = false },
@@ -360,28 +374,18 @@ fun ViewToggleSplitButton(
     }
 }
 
-/**
- * Official Material 3 Expressive Vibrant Menu for Theme / Colour Mode switching.
- * Triggered by the "..." (More options) button in the topbar.
- *
- * Implements M3 Expressive Vibrant Menu design tokens:
- * - Trigger button: ExpressiveIconButton with Icons.Rounded.MoreHoriz ("...")
- * - Menu Container: DropdownMenu with MenuDefaults.groupVibrantContainerColor and 20.dp rounded corners
- * - Menu Items: Styled with MenuDefaults.itemVibrantColors()
- * - Options:
- *     1. Standard (Original page colors, Icons.Rounded.LightMode)
- *     2. Dark (High-contrast negative page inversion, Icons.Rounded.InvertColors)
- *     3. Slate (Soft night dark mode for eye comfort, Icons.Rounded.Bedtime)
- * - Highlights active selection with Check icon, container tint, and bold typography.
- */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun ThemeVibrantMenu(
     activeColorMode: PdfColorMode,
     onSelectColorMode: (PdfColorMode) -> Unit,
+    activeLayoutMode: PdfViewLayoutMode = PdfViewLayoutMode.FIT_100,
+    onSelectLayoutMode: (PdfViewLayoutMode) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var expanded by remember { mutableStateOf(false) }
+    var themeSubmenuExpanded by remember { mutableStateOf(false) }
+    var layoutSubmenuExpanded by remember { mutableStateOf(false) }
 
     val modes = listOf(
         Triple(PdfColorMode.NORMAL, "Standard", Icons.Rounded.LightMode),
@@ -389,94 +393,229 @@ fun ThemeVibrantMenu(
         Triple(PdfColorMode.NIGHT_SLATE, "Slate", Icons.Rounded.Bedtime)
     )
 
+    val layouts = listOf(
+        Triple(PdfViewLayoutMode.FIT_100, "Fit 100%", Icons.Rounded.FitScreen),
+        Triple(PdfViewLayoutMode.FIT_50, "50% View", Icons.Rounded.ZoomOut),
+        Triple(PdfViewLayoutMode.TWO_PAGE, "Two-Page Spread", Icons.Rounded.AutoStories)
+    )
+
     Box(modifier = modifier.systemGestureExclusion()) {
-        FilledTonalIconButton(
+        IconButton(
             onClick = { expanded = !expanded },
             modifier = Modifier
                 .systemGestureExclusion()
-                .pointerHoverIcon(PointerIcon.Hand),
-            colors = IconButtonDefaults.filledTonalIconButtonColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+                .pointerHoverIcon(PointerIcon.Hand)
         ) {
             Icon(
-                imageVector = Icons.Rounded.MoreHoriz,
-                contentDescription = "Theme Options",
+                imageVector = Icons.Rounded.MoreVert,
+                contentDescription = "Reader Options",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(20.dp)
             )
         }
 
         DropdownMenu(
             expanded = expanded,
-            onDismissRequest = { expanded = false },
+            onDismissRequest = {
+                expanded = false
+                themeSubmenuExpanded = false
+                layoutSubmenuExpanded = false
+            },
             containerColor = MenuDefaults.groupVibrantContainerColor,
-            shape = RoundedCornerShape(20.dp),
+            shape = MaterialTheme.shapes.large,
             tonalElevation = 4.dp,
             shadowElevation = 8.dp,
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
         ) {
-            modes.forEach { (mode, label, icon) ->
-                val isSelected = activeColorMode == mode
+            // Submenu 1: Page Theme
+            Box {
                 DropdownMenuItem(
                     text = {
                         Text(
-                            text = label,
+                            text = "Page Theme",
                             style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                            fontWeight = FontWeight.SemiBold
                         )
                     },
                     leadingIcon = {
                         Icon(
-                            imageVector = icon,
+                            imageVector = Icons.Rounded.InvertColors,
                             contentDescription = null,
                             modifier = Modifier.size(20.dp)
                         )
                     },
-                    trailingIcon = if (isSelected) {
-                        {
-                            Icon(
-                                imageVector = Icons.Rounded.Check,
-                                contentDescription = "Selected",
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                    } else null,
+                    trailingIcon = {
+                        Icon(
+                            imageVector = Icons.Rounded.ArrowDropDown,
+                            contentDescription = "Open Page Theme Submenu",
+                            modifier = Modifier
+                                .size(20.dp)
+                                .graphicsLayer { rotationZ = -90f }
+                        )
+                    },
                     onClick = {
-                        onSelectColorMode(mode)
-                        expanded = false
+                        layoutSubmenuExpanded = false
+                        themeSubmenuExpanded = !themeSubmenuExpanded
                     },
                     colors = MenuDefaults.itemVibrantColors(),
-                    modifier = Modifier
-                        .pointerHoverIcon(PointerIcon.Hand)
-                        .padding(horizontal = 4.dp, vertical = 2.dp)
-                        .then(
-                            if (isSelected) {
-                                Modifier.background(
-                                    color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.15f),
-                                    shape = RoundedCornerShape(12.dp)
-                                )
-                            } else {
-                                Modifier
-                            }
-                        )
+                    modifier = Modifier.pointerHoverIcon(PointerIcon.Hand)
                 )
+
+                DropdownMenu(
+                    expanded = themeSubmenuExpanded,
+                    onDismissRequest = { themeSubmenuExpanded = false },
+                    containerColor = MenuDefaults.groupVibrantContainerColor,
+                    shape = MaterialTheme.shapes.large,
+                    tonalElevation = 4.dp,
+                    shadowElevation = 8.dp,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+                ) {
+                    modes.forEach { (mode, label, icon) ->
+                        val isSelected = activeColorMode == mode
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    text = label,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                )
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = icon,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            },
+                            trailingIcon = if (isSelected) {
+                                {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Check,
+                                        contentDescription = "Selected",
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            } else null,
+                            onClick = {
+                                onSelectColorMode(mode)
+                                themeSubmenuExpanded = false
+                                expanded = false
+                            },
+                            colors = MenuDefaults.itemVibrantColors(),
+                            modifier = Modifier
+                                .pointerHoverIcon(PointerIcon.Hand)
+                                .padding(horizontal = 4.dp, vertical = 2.dp)
+                                .then(
+                                    if (isSelected) {
+                                        Modifier.background(
+                                            color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.15f),
+                                            shape = MaterialTheme.shapes.medium
+                                        )
+                                    } else {
+                                        Modifier
+                                    }
+                                )
+                        )
+                    }
+                }
+            }
+
+            // Submenu 2: Page Layout
+            Box {
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            text = "Page Layout",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Rounded.AutoStories,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    },
+                    trailingIcon = {
+                        Icon(
+                            imageVector = Icons.Rounded.ArrowDropDown,
+                            contentDescription = "Open Page Layout Submenu",
+                            modifier = Modifier
+                                .size(20.dp)
+                                .graphicsLayer { rotationZ = -90f }
+                        )
+                    },
+                    onClick = {
+                        themeSubmenuExpanded = false
+                        layoutSubmenuExpanded = !layoutSubmenuExpanded
+                    },
+                    colors = MenuDefaults.itemVibrantColors(),
+                    modifier = Modifier.pointerHoverIcon(PointerIcon.Hand)
+                )
+
+                DropdownMenu(
+                    expanded = layoutSubmenuExpanded,
+                    onDismissRequest = { layoutSubmenuExpanded = false },
+                    containerColor = MenuDefaults.groupVibrantContainerColor,
+                    shape = MaterialTheme.shapes.large,
+                    tonalElevation = 4.dp,
+                    shadowElevation = 8.dp,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+                ) {
+                    layouts.forEach { (layout, label, icon) ->
+                        val isSelected = activeLayoutMode == layout
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    text = label,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                )
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = icon,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            },
+                            trailingIcon = if (isSelected) {
+                                {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Check,
+                                        contentDescription = "Selected",
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            } else null,
+                            onClick = {
+                                onSelectLayoutMode(layout)
+                                layoutSubmenuExpanded = false
+                                expanded = false
+                            },
+                            colors = MenuDefaults.itemVibrantColors(),
+                            modifier = Modifier
+                                .pointerHoverIcon(PointerIcon.Hand)
+                                .padding(horizontal = 4.dp, vertical = 2.dp)
+                                .then(
+                                    if (isSelected) {
+                                        Modifier.background(
+                                            color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.15f),
+                                            shape = MaterialTheme.shapes.medium
+                                        )
+                                    } else {
+                                        Modifier
+                                    }
+                                )
+                        )
+                    }
+                }
             }
         }
     }
 }
 
-/**
- * Official Material 3 Expressive Filled Connected Button Group for Theme / Colour Inversion Modes:
- * - Standard (Original page colors)
- * - Dark (High-contrast negative page inversion)
- * - Night Slate (Soft night dark mode for eye comfort)
- *
- * Implements M3 Expressive filled connected button group:
- * - Spacing: ButtonGroupDefaults.ConnectedSpaceBetween (2.dp)
- * - Shapes: connectedLeadingButtonShapes, connectedMiddleButtonShapes, connectedTrailingButtonShapes
- * - Filled ToggleButtons with active primary container styling
- */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun ColorModeConnectedButtonGroup(
@@ -570,10 +709,6 @@ fun ColorModeConnectedButtonGroup(
     }
 }
 
-/**
- * Official Material 3 Expressive Icon Button using official IconButtonDefaults.shapes()
- * and IconButtonDefaults.toggleableShapes() for dynamic shape morphing on interaction.
- */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun ExpressiveIconButton(

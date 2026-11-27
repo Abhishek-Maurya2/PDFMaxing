@@ -7,7 +7,10 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.droid.pdfmaxing.data.model.RecentDocument
+import com.droid.pdfmaxing.ui.reader.PdfViewLayoutMode
+import com.droid.pdfmaxing.ui.theme.PdfColorMode
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import org.json.JSONArray
 import org.json.JSONObject
@@ -23,6 +26,13 @@ class RecentDocumentRepository(private val context: Context) {
         parseRecentDocuments(jsonString)
     }
 
+    suspend fun getDocument(uriString: String): RecentDocument? {
+        val preferences = context.dataStore.data.first()
+        val jsonString = preferences[recentsKey] ?: "[]"
+        val list = parseRecentDocuments(jsonString)
+        return list.firstOrNull { it.uriString == uriString }
+    }
+
     suspend fun addOrUpdateDocument(document: RecentDocument) {
         context.dataStore.edit { preferences ->
             val currentList = parseRecentDocuments(preferences[recentsKey] ?: "[]").toMutableList()
@@ -36,23 +46,62 @@ class RecentDocumentRepository(private val context: Context) {
         }
     }
 
-    suspend fun updateLastReadPage(uriString: String, page: Int, scrollOffset: Int = 0) {
+    suspend fun updateDocumentViewState(
+        uriString: String,
+        page: Int? = null,
+        zoomLevel: Float? = null,
+        colorMode: PdfColorMode? = null,
+        scrollOffset: Int? = null,
+        layoutMode: PdfViewLayoutMode? = null,
+        touchTimestamp: Boolean = true
+    ) {
         context.dataStore.edit { preferences ->
             val currentList = parseRecentDocuments(preferences[recentsKey] ?: "[]").toMutableList()
             val index = currentList.indexOfFirst { it.uriString == uriString }
             if (index != -1) {
                 val existing = currentList[index]
-                currentList[index] = existing.copy(
-                    lastReadPage = page,
-                    scrollOffset = scrollOffset,
-                    lastOpenedTimestamp = System.currentTimeMillis()
+                val updated = existing.copy(
+                    lastReadPage = page ?: existing.lastReadPage,
+                    zoomLevel = zoomLevel ?: existing.zoomLevel,
+                    colorMode = colorMode ?: existing.colorMode,
+                    scrollOffset = scrollOffset ?: existing.scrollOffset,
+                    layoutMode = layoutMode ?: existing.layoutMode,
+                    lastOpenedTimestamp = if (touchTimestamp) System.currentTimeMillis() else existing.lastOpenedTimestamp
                 )
-                // Move updated document to the top
-                val updated = currentList.removeAt(index)
-                currentList.add(0, updated)
+                currentList[index] = updated
+                if (touchTimestamp && index != 0) {
+                    currentList.removeAt(index)
+                    currentList.add(0, updated)
+                }
                 preferences[recentsKey] = serializeRecentDocuments(currentList)
             }
         }
+    }
+
+    suspend fun updateLastReadPage(uriString: String, page: Int, scrollOffset: Int = 0) {
+        updateDocumentViewState(
+            uriString = uriString,
+            page = page,
+            scrollOffset = scrollOffset,
+            touchTimestamp = false
+        )
+    }
+
+    suspend fun updateZoomLevel(uriString: String, zoomLevel: Float) {
+        updateDocumentViewState(uriString = uriString, zoomLevel = zoomLevel, touchTimestamp = false)
+    }
+
+    suspend fun updateColorMode(uriString: String, colorMode: PdfColorMode) {
+        updateDocumentViewState(uriString = uriString, colorMode = colorMode, touchTimestamp = false)
+    }
+
+    suspend fun updateLayoutMode(uriString: String, layoutMode: PdfViewLayoutMode, zoomLevel: Float? = null) {
+        updateDocumentViewState(
+            uriString = uriString,
+            layoutMode = layoutMode,
+            zoomLevel = zoomLevel,
+            touchTimestamp = false
+        )
     }
 
     suspend fun removeDocument(uriString: String) {
@@ -80,16 +129,30 @@ class RecentDocumentRepository(private val context: Context) {
                 lastReadPage = 1,
                 fileSizeBytes = 3435L,
                 isAsset = true,
-                assetPath = "sample_guide.pdf"
+                assetPath = "sample_guide.pdf",
+                zoomLevel = 1.0f,
+                colorMode = PdfColorMode.NORMAL
             )
         }
 
-        private fun parseRecentDocuments(json: String): List<RecentDocument> {
+        fun parseRecentDocuments(json: String): List<RecentDocument> {
             return try {
                 val array = JSONArray(json)
                 val list = mutableListOf<RecentDocument>()
                 for (i in 0 until array.length()) {
                     val obj = array.getJSONObject(i)
+                    val colorModeStr = obj.optString("colorMode", PdfColorMode.NORMAL.name)
+                    val colorMode = try {
+                        PdfColorMode.valueOf(colorModeStr)
+                    } catch (e: Exception) {
+                        PdfColorMode.NORMAL
+                    }
+                    val layoutModeStr = obj.optString("layoutMode", PdfViewLayoutMode.FIT_100.name)
+                    val layoutMode = try {
+                        PdfViewLayoutMode.valueOf(layoutModeStr)
+                    } catch (e: Exception) {
+                        PdfViewLayoutMode.FIT_100
+                    }
                     list.add(
                         RecentDocument(
                             uriString = obj.getString("uriString"),
@@ -100,7 +163,10 @@ class RecentDocumentRepository(private val context: Context) {
                             lastOpenedTimestamp = obj.optLong("lastOpenedTimestamp", System.currentTimeMillis()),
                             fileSizeBytes = obj.optLong("fileSizeBytes", 0L),
                             isAsset = obj.optBoolean("isAsset", false),
-                            assetPath = if (obj.has("assetPath")) obj.getString("assetPath") else null
+                            assetPath = if (obj.has("assetPath") && !obj.isNull("assetPath")) obj.getString("assetPath") else null,
+                            zoomLevel = obj.optDouble("zoomLevel", 1.0).toFloat(),
+                            colorMode = colorMode,
+                            layoutMode = layoutMode
                         )
                     )
                 }
@@ -110,7 +176,7 @@ class RecentDocumentRepository(private val context: Context) {
             }
         }
 
-        private fun serializeRecentDocuments(list: List<RecentDocument>): String {
+        fun serializeRecentDocuments(list: List<RecentDocument>): String {
             val array = JSONArray()
             for (doc in list) {
                 val obj = JSONObject().apply {
@@ -123,6 +189,9 @@ class RecentDocumentRepository(private val context: Context) {
                     put("fileSizeBytes", doc.fileSizeBytes)
                     put("isAsset", doc.isAsset)
                     doc.assetPath?.let { put("assetPath", it) }
+                    put("zoomLevel", doc.zoomLevel.toDouble())
+                    put("colorMode", doc.colorMode.name)
+                    put("layoutMode", doc.layoutMode.name)
                 }
                 array.put(obj)
             }

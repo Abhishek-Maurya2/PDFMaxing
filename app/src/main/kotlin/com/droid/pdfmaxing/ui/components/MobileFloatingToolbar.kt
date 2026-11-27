@@ -1,8 +1,6 @@
 package com.droid.pdfmaxing.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -26,9 +24,12 @@ import androidx.compose.material.icons.automirrored.rounded.ViewSidebar
 import androidx.compose.material.icons.rounded.AutoStories
 import androidx.compose.material.icons.rounded.ChevronLeft
 import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.FitScreen
 import androidx.compose.material.icons.rounded.InvertColors
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.ZoomOut
+import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FloatingToolbarDefaults
@@ -54,16 +55,17 @@ import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.droid.pdfmaxing.ui.reader.PdfViewLayoutMode
 import com.droid.pdfmaxing.ui.theme.PdfColorMode
 import kotlin.math.roundToInt
 
 // Official Material 3 Expressive Connected Shapes for Horizontal Button Groups
+// Outer corners use M3E 20.dp step; inner connecting corners use 4.dp
 private val ConnectedLeadingShape = RoundedCornerShape(
-    topStart = 22.dp,
-    bottomStart = 22.dp,
+    topStart = 20.dp,
+    bottomStart = 20.dp,
     topEnd = 4.dp,
     bottomEnd = 4.dp
 )
@@ -73,11 +75,11 @@ private val ConnectedMiddleShape = RoundedCornerShape(4.dp)
 private val ConnectedTrailingShape = RoundedCornerShape(
     topStart = 4.dp,
     bottomStart = 4.dp,
-    topEnd = 22.dp,
-    bottomEnd = 22.dp
+    topEnd = 20.dp,
+    bottomEnd = 20.dp
 )
 
-private val ConnectedSpaceBetween = 3.dp
+private val ConnectedSpaceBetween = 2.dp
 
 /**
  * Material 3 Expressive Mobile Floating Toolbar with HorizontalFloatingToolbar,
@@ -99,8 +101,14 @@ fun MobileFloatingToolbar(
     onCycleLayoutMode: () -> Unit,
     onCycleColorMode: () -> Unit,
     onToggleSidebar: () -> Unit,
+    isSearchOpen: Boolean = false,
+    onToggleSearch: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val spatialOffsetSpec = MaterialTheme.motionScheme.defaultSpatialSpec<IntOffset>()
+    val spatialScaleSpec = MaterialTheme.motionScheme.defaultSpatialSpec<Float>()
+    val effectsSpec = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
+
     Column(
         modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -109,37 +117,25 @@ fun MobileFloatingToolbar(
         // === Springy Expressive Scrub Slider Pill (Floats directly above toolbar) ===
         AnimatedVisibility(
             visible = isPageSliderPillOpen,
-            enter = fadeIn(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) +
+            enter = fadeIn(animationSpec = effectsSpec) +
                     slideInVertically(
                         initialOffsetY = { fullHeight -> fullHeight / 2 },
-                        animationSpec = spring(
-                            dampingRatio = Spring.DampingRatioMediumBouncy,
-                            stiffness = Spring.StiffnessMediumLow
-                        )
+                        animationSpec = spatialOffsetSpec
                     ) +
                     scaleIn(
                         initialScale = 0.85f,
                         transformOrigin = TransformOrigin(0.5f, 1f),
-                        animationSpec = spring(
-                            dampingRatio = Spring.DampingRatioMediumBouncy,
-                            stiffness = Spring.StiffnessMediumLow
-                        )
+                        animationSpec = spatialScaleSpec
                     ),
-            exit = fadeOut(animationSpec = spring(stiffness = Spring.StiffnessMedium)) +
+            exit = fadeOut(animationSpec = effectsSpec) +
                    slideOutVertically(
                        targetOffsetY = { fullHeight -> fullHeight / 2 },
-                       animationSpec = spring(
-                           dampingRatio = Spring.DampingRatioNoBouncy,
-                           stiffness = Spring.StiffnessMedium
-                       )
+                       animationSpec = spatialOffsetSpec
                    ) +
                    scaleOut(
                        targetScale = 0.85f,
                        transformOrigin = TransformOrigin(0.5f, 1f),
-                       animationSpec = spring(
-                           dampingRatio = Spring.DampingRatioNoBouncy,
-                           stiffness = Spring.StiffnessMedium
-                       )
+                       animationSpec = spatialScaleSpec
                    )
         ) {
             MobilePageSliderPill(
@@ -154,94 +150,65 @@ fun MobileFloatingToolbar(
             visible = isVisible,
             enter = slideInVertically(
                 initialOffsetY = { it },
-                animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioMediumBouncy,
-                    stiffness = Spring.StiffnessMediumLow
-                )
-            ) + fadeIn(),
+                animationSpec = spatialOffsetSpec
+            ) + scaleIn(
+                initialScale = 0.9f,
+                transformOrigin = TransformOrigin(0.5f, 1f),
+                animationSpec = spatialScaleSpec
+            ) + fadeIn(animationSpec = effectsSpec),
             exit = slideOutVertically(
                 targetOffsetY = { it },
-                animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioNoBouncy,
-                    stiffness = Spring.StiffnessMedium
-                )
-            ) + fadeOut()
+                animationSpec = spatialOffsetSpec
+            ) + scaleOut(
+                targetScale = 0.9f,
+                transformOrigin = TransformOrigin(0.5f, 1f),
+                animationSpec = spatialScaleSpec
+            ) + fadeOut(animationSpec = effectsSpec)
         ) {
             HorizontalFloatingToolbar(
                 expanded = true,
                 colors = FloatingToolbarDefaults.vibrantFloatingToolbarColors(),
-                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
             ) {
-                // Group 1: Page Navigation Filled Connected Buttons
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(ConnectedSpaceBetween)
+                // Group 1: Page Indicator & Slider Toggle (prev/next hidden on compact mobile)
+                FilledIconButton(
+                    onClick = onTogglePageSliderPill,
+                    shape = CircleShape,
+                    colors = if (isPageSliderPillOpen) {
+                        IconButtonDefaults.filledIconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            contentColor = MaterialTheme.colorScheme.primaryContainer
+                        )
+                    } else {
+                        IconButtonDefaults.filledIconButtonColors()
+                    },
+                    modifier = Modifier
+                        .height(48.dp)
+                        .widthIn(min = 64.dp)
+                        .pointerHoverIcon(PointerIcon.Hand)
                 ) {
-                    // Previous Page
-                    MobileConnectedButton(
-                        icon = Icons.Rounded.ChevronLeft,
-                        contentDescription = "Previous Page",
-                        onClick = onPreviousPage,
-                        enabled = currentPage > 1,
-                        shape = ConnectedLeadingShape
-                    )
-
-                    // Page Indicator & Slider Toggle
-                    FilledIconButton(
-                        onClick = onTogglePageSliderPill,
-                        shape = ConnectedMiddleShape,
-                        colors = if (isPageSliderPillOpen) {
-                            IconButtonDefaults.filledIconButtonColors(
-                                containerColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                                contentColor = MaterialTheme.colorScheme.primaryContainer
-                            )
-                        } else {
-                            IconButtonDefaults.filledIconButtonColors()
-                        },
-                        modifier = Modifier
-                            .height(44.dp)
-                            .widthIn(min = 68.dp)
-                            .padding(horizontal = 1.dp)
-                            .pointerHoverIcon(PointerIcon.Hand)
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
                     ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center
-                        ) {
-                            Text(
-                                text = "$currentPage",
-                                style = MaterialTheme.typography.labelMedium.copy(
-                                    fontWeight = FontWeight.ExtraBold,
-                                    fontSize = 13.sp,
-                                    lineHeight = 14.sp
-                                ),
-                                textAlign = TextAlign.Center
-                            )
-                            Text(
-                                text = "$totalPages",
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    fontWeight = FontWeight.Medium,
-                                    fontSize = 9.sp,
-                                    lineHeight = 10.sp
-                                ),
-                                color = if (isPageSliderPillOpen) {
-                                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f)
-                                } else {
-                                    MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f)
-                                },
-                                textAlign = TextAlign.Center
-                            )
-                        }
+                        Text(
+                            text = "$currentPage",
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontWeight = FontWeight.Bold
+                            ),
+                            textAlign = TextAlign.Center
+                        )
+                        Text(
+                            text = "of $totalPages",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (isPageSliderPillOpen) {
+                                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f)
+                            } else {
+                                MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.85f)
+                            },
+                            textAlign = TextAlign.Center
+                        )
                     }
-
-                    // Next Page
-                    MobileConnectedButton(
-                        icon = Icons.Rounded.ChevronRight,
-                        contentDescription = "Next Page",
-                        onClick = onNextPage,
-                        enabled = currentPage < totalPages,
-                        shape = ConnectedTrailingShape
-                    )
                 }
 
                 // Centered Vertical Divider between groups
@@ -257,7 +224,7 @@ fun MobileFloatingToolbar(
                 // Group 2: View Controls Filled Connected Buttons
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(ConnectedSpaceBetween)
+                    horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
                 ) {
                     // Layout Mode
                     val layoutIcon = when (layoutMode) {
@@ -285,6 +252,14 @@ fun MobileFloatingToolbar(
                         icon = Icons.AutoMirrored.Rounded.ViewSidebar,
                         contentDescription = "Toggle Sidebar",
                         onClick = onToggleSidebar,
+                        shape = ConnectedMiddleShape
+                    )
+
+                    // Search Toggle
+                    MobileConnectedButton(
+                        icon = if (isSearchOpen) Icons.Rounded.Close else Icons.Rounded.Search,
+                        contentDescription = if (isSearchOpen) "Close Search" else "Search in PDF",
+                        onClick = onToggleSearch,
                         shape = ConnectedTrailingShape
                     )
                 }
@@ -308,7 +283,7 @@ private fun MobileConnectedButton(
         shape = shape,
         colors = IconButtonDefaults.filledIconButtonColors(),
         modifier = modifier
-            .size(44.dp)
+            .size(48.dp)
             .pointerHoverIcon(if (enabled) PointerIcon.Hand else PointerIcon.Default)
     ) {
         Icon(
@@ -357,10 +332,7 @@ private fun MobilePageSliderPill(
             val selectedPage = sliderState.value.roundToInt().coerceIn(1, totalPages)
             Text(
                 text = "$selectedPage / $totalPages",
-                style = MaterialTheme.typography.labelMedium.copy(
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 12.sp
-                ),
+                style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onPrimaryContainer
             )
 

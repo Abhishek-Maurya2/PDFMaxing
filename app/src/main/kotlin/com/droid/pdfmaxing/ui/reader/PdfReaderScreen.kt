@@ -1,19 +1,27 @@
 package com.droid.pdfmaxing.ui.reader
 
+import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
+import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateCentroidSize
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -30,22 +38,32 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.InvertColors
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ContainedLoadingIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -74,58 +92,130 @@ import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.isCtrlPressed as isPointerCtrlPressed
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.coerceAtLeast
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.droid.pdfmaxing.data.settings.AppSettings
 import com.droid.pdfmaxing.ui.components.DesktopPdfToolbar
+import com.droid.pdfmaxing.ui.components.ExpressiveTabBar
 import com.droid.pdfmaxing.ui.components.ExpressiveVerticalFloatingToolbar
 import com.droid.pdfmaxing.ui.components.MobileFloatingToolbar
 import com.droid.pdfmaxing.ui.components.PdfPageItem
-import com.droid.pdfmaxing.ui.components.PdfTabBar
+import com.droid.pdfmaxing.ui.components.SearchPill
 import com.droid.pdfmaxing.ui.components.ThemeVibrantMenu
 import com.droid.pdfmaxing.ui.components.ThumbnailSidebar
+import com.droid.pdfmaxing.ui.theme.EmphasizedTypography
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun PdfReaderScreen(
     documentUri: Uri?,
     isSampleGuide: Boolean = false,
     onBackToLibrary: () -> Unit,
+    onOpenSettings: () -> Unit = {},
+    appSettings: AppSettings = AppSettings(),
     viewModel: PdfReaderViewModel = viewModel(),
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
-    val listState = rememberLazyListState()
+    val tabListStates = remember { mutableMapOf<String, LazyListState>() }
+    val currentTabId = uiState.activeTabId ?: ""
+    val listState = tabListStates.getOrPut(currentTabId) {
+        val targetPage = uiState.currentPage
+        val targetItem = if (uiState.layoutMode == PdfViewLayoutMode.TWO_PAGE) {
+            (targetPage - 1).coerceAtLeast(0) / 2
+        } else {
+            (targetPage - 1).coerceAtLeast(0)
+        }
+        LazyListState(
+            firstVisibleItemIndex = targetItem,
+            firstVisibleItemScrollOffset = uiState.scrollOffset
+        )
+    }
     val horizontalScrollState = rememberScrollState()
     val focusRequester = remember { FocusRequester() }
     var showPageSliderPill by remember { mutableStateOf(false) }
 
-    // SAF File Picker for opening a new document / tab
+    // SAF File Explorer Picker for opening a new document / tab directly in device file manager
     val openFileLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument()
+        contract = object : ActivityResultContracts.OpenDocument() {
+            override fun createIntent(context: android.content.Context, input: Array<String>): Intent {
+                return super.createIntent(context, input).apply {
+                    putExtra(Intent.EXTRA_LOCAL_ONLY, true)
+                    putExtra("android.content.extra.SHOW_ADVANCED", true)
+                }
+            }
+        }
     ) { uri: Uri? ->
         if (uri != null) {
+            try {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            } catch (_: Exception) {}
             viewModel.loadDocument(uri, initialPage = 1, asNewTab = true)
         }
     }
 
-    // Load initial document if tabs are currently empty
+    // SAF Picker for relocating a broken/moved document in the active tab
+    val relocateFileLauncher = rememberLauncherForActivityResult(
+        contract = object : ActivityResultContracts.OpenDocument() {
+            override fun createIntent(context: android.content.Context, input: Array<String>): Intent {
+                return super.createIntent(context, input).apply {
+                    putExtra(Intent.EXTRA_LOCAL_ONLY, true)
+                    putExtra("android.content.extra.SHOW_ADVANCED", true)
+                }
+            }
+        }
+    ) { uri: Uri? ->
+        if (uri != null) {
+            try {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            } catch (_: Exception) {}
+            viewModel.relocateActiveDocument(uri)
+        }
+    }
+
+    // Load initial document if not already in tabs, or switch to it if already open
     LaunchedEffect(documentUri, isSampleGuide) {
-        if (uiState.tabs.isEmpty()) {
-            if (isSampleGuide) {
-                viewModel.loadSampleGuide(asNewTab = false)
-            } else if (documentUri != null) {
-                viewModel.loadDocument(documentUri, initialPage = 1, asNewTab = false)
+        if (isSampleGuide) {
+            val existingTab = uiState.tabs.find { it.isAsset && it.assetPath == "sample_guide.pdf" }
+            if (existingTab != null) {
+                if (uiState.activeTabId != existingTab.id) {
+                    viewModel.switchTab(existingTab.id)
+                }
+            } else {
+                viewModel.loadSampleGuide(asNewTab = uiState.tabs.isNotEmpty())
+            }
+        } else if (documentUri != null) {
+            val targetUriStr = documentUri.toString()
+            val existingTab = uiState.tabs.find { it.uri?.toString() == targetUriStr }
+            if (existingTab != null) {
+                if (uiState.activeTabId != existingTab.id) {
+                    viewModel.switchTab(existingTab.id)
+                }
+            } else {
+                viewModel.loadDocument(documentUri, initialPage = 1, asNewTab = uiState.tabs.isNotEmpty())
             }
         }
     }
@@ -142,20 +232,97 @@ fun PdfReaderScreen(
         focusRequester.requestFocus()
     }
 
-    // Sync lazy list visible item to current page indicator
-    LaunchedEffect(listState, uiState.layoutMode) {
-        snapshotFlow { listState.firstVisibleItemIndex }
+    // Track whether initial scroll position for active tab has been restored
+    var hasRestoredScrollForTab by remember(uiState.activeTabId) { mutableStateOf(false) }
+    var lastRestoredLayoutMode by remember(uiState.activeTabId) { mutableStateOf<PdfViewLayoutMode?>(null) }
+
+    LaunchedEffect(uiState.activeTabId, uiState.loadState) {
+        if (uiState.loadState is DocumentLoadState.Success && !hasRestoredScrollForTab) {
+            val targetPage = uiState.currentPage
+            val targetItem = if (uiState.layoutMode == PdfViewLayoutMode.TWO_PAGE) {
+                (targetPage - 1).coerceAtLeast(0) / 2
+            } else {
+                (targetPage - 1).coerceAtLeast(0)
+            }
+            listState.scrollToItem(targetItem, uiState.scrollOffset)
+            hasRestoredScrollForTab = true
+            lastRestoredLayoutMode = uiState.layoutMode
+        }
+    }
+
+    // Keep scroll position aligned when layout mode changes within the active tab
+    LaunchedEffect(uiState.layoutMode) {
+        if (uiState.totalPages > 0 && hasRestoredScrollForTab &&
+            lastRestoredLayoutMode != null && lastRestoredLayoutMode != uiState.layoutMode
+        ) {
+            val targetItem = if (uiState.layoutMode == PdfViewLayoutMode.TWO_PAGE) {
+                (uiState.currentPage - 1).coerceAtLeast(0) / 2
+            } else {
+                (uiState.currentPage - 1).coerceAtLeast(0)
+            }
+            listState.scrollToItem(targetItem, uiState.scrollOffset)
+            lastRestoredLayoutMode = uiState.layoutMode
+        }
+    }
+
+    val scrollToPage: (Int, Boolean) -> Unit = { page, animate ->
+        scope.launch {
+            val clampedPage = PdfPageHelper.clampPage(page, uiState.totalPages)
+            val targetItem = if (uiState.layoutMode == PdfViewLayoutMode.TWO_PAGE) {
+                (clampedPage - 1).coerceAtLeast(0) / 2
+            } else {
+                (clampedPage - 1).coerceAtLeast(0)
+            }
+            if (animate) {
+                listState.animateScrollToItem(targetItem)
+            } else {
+                listState.scrollToItem(targetItem)
+            }
+        }
+    }
+
+    // Sync lazy list visible item and scroll offset to current tab during scroll
+    LaunchedEffect(listState, uiState.layoutMode, uiState.activeTabId) {
+        snapshotFlow { Pair(listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset) }
             .distinctUntilChanged()
-            .collect { firstIndex ->
-                if (uiState.totalPages > 0) {
+            .collect { (firstIndex, scrollOffset) ->
+                if (!hasRestoredScrollForTab) return@collect
+                if (uiState.totalPages > 0 && listState.isScrollInProgress) {
                     val computedPage = if (uiState.layoutMode == PdfViewLayoutMode.TWO_PAGE) {
                         firstIndex * 2 + 1
                     } else {
                         firstIndex + 1
                     }
-                    viewModel.setPage(computedPage.coerceIn(1, uiState.totalPages))
+                    viewModel.updateScrollPosition(
+                        page = computedPage.coerceIn(1, uiState.totalPages),
+                        scrollOffset = scrollOffset
+                    )
                 }
             }
+    }
+
+    // Automatically scroll to active search match page when match changes or search results update
+    LaunchedEffect(uiState.currentMatchIndex, uiState.searchMatches) {
+        val currentMatch = uiState.searchMatches.getOrNull(uiState.currentMatchIndex)
+        if (currentMatch != null) {
+            val targetItem = if (uiState.layoutMode == PdfViewLayoutMode.TWO_PAGE) {
+                currentMatch.pageIndex / 2
+            } else {
+                currentMatch.pageIndex
+            }
+            listState.animateScrollToItem(targetItem.coerceAtLeast(0))
+        }
+    }
+
+    val handleBackToLibrary = {
+        viewModel.saveCurrentState()
+        onBackToLibrary()
+    }
+
+    val handleCloseTab = { tabId: String ->
+        tabListStates.remove(tabId)
+        val hasRemaining = viewModel.closeTab(tabId)
+        if (!hasRemaining) handleBackToLibrary()
     }
 
     // Intercept hardware Back button
@@ -165,7 +332,7 @@ fun PdfReaderScreen(
         } else if (showPageSliderPill) {
             showPageSliderPill = false
         } else {
-            onBackToLibrary()
+            handleBackToLibrary()
         }
     }
 
@@ -184,17 +351,16 @@ fun PdfReaderScreen(
                             viewModel.toggleSearch()
                             true
                         }
-                        // Ctrl + O: Open file in new tab
+                        // Ctrl + O: Open home page to open recent or new PDF
                         keyEvent.isCtrlPressed && keyEvent.key == Key.O -> {
-                            openFileLauncher.launch(arrayOf("application/pdf"))
+                            handleBackToLibrary()
                             true
                         }
                         // Ctrl + W: Close current tab
                         keyEvent.isCtrlPressed && keyEvent.key == Key.W -> {
                             val activeId = uiState.activeTabId
                             if (activeId != null) {
-                                val hasRemaining = viewModel.closeTab(activeId)
-                                if (!hasRemaining) onBackToLibrary()
+                                handleCloseTab(activeId)
                             }
                             true
                         }
@@ -218,30 +384,20 @@ fun PdfReaderScreen(
                             viewModel.resetZoom()
                             true
                         }
-                        // Page Down, Space, Down arrow: Next page
+                        // Page Down, Space, Right arrow: Next page
                         keyEvent.key == Key.PageDown || (keyEvent.key == Key.Spacebar && !keyEvent.isShiftPressed) || keyEvent.key == Key.DirectionRight -> {
+                            val step = if (uiState.layoutMode == PdfViewLayoutMode.TWO_PAGE) 2 else 1
+                            val targetPage = PdfPageHelper.clampPage(uiState.currentPage + step, uiState.totalPages)
                             viewModel.nextPage()
-                            scope.launch {
-                                val targetItem = if (uiState.layoutMode == PdfViewLayoutMode.TWO_PAGE) {
-                                    (uiState.currentPage - 1) / 2
-                                } else {
-                                    uiState.currentPage - 1
-                                }
-                                listState.animateScrollToItem(targetItem.coerceAtLeast(0))
-                            }
+                            scrollToPage(targetPage, true)
                             true
                         }
-                        // Page Up, Shift+Space, Up arrow: Previous page
+                        // Page Up, Shift+Space, Left arrow: Previous page
                         keyEvent.key == Key.PageUp || (keyEvent.key == Key.Spacebar && keyEvent.isShiftPressed) || keyEvent.key == Key.DirectionLeft -> {
+                            val step = if (uiState.layoutMode == PdfViewLayoutMode.TWO_PAGE) 2 else 1
+                            val targetPage = PdfPageHelper.clampPage(uiState.currentPage - step, uiState.totalPages)
                             viewModel.previousPage()
-                            scope.launch {
-                                val targetItem = if (uiState.layoutMode == PdfViewLayoutMode.TWO_PAGE) {
-                                    (uiState.currentPage - 2).coerceAtLeast(0) / 2
-                                } else {
-                                    (uiState.currentPage - 2).coerceAtLeast(0)
-                                }
-                                listState.animateScrollToItem(targetItem.coerceAtLeast(0))
-                            }
+                            scrollToPage(targetPage, true)
                             true
                         }
                         // Escape: Dismiss search, or dismiss slider, or return to library
@@ -251,7 +407,7 @@ fun PdfReaderScreen(
                             } else if (showPageSliderPill) {
                                 showPageSliderPill = false
                             } else {
-                                onBackToLibrary()
+                                handleBackToLibrary()
                             }
                             true
                         }
@@ -262,6 +418,12 @@ fun PdfReaderScreen(
     ) {
         val screenMaxWidth = maxWidth
         val isLargeScreen = screenMaxWidth >= 720.dp
+
+        LaunchedEffect(isLargeScreen, appSettings.autoOpenSidebar) {
+            if (isLargeScreen && appSettings.autoOpenSidebar && !uiState.isSidebarOpen) {
+                viewModel.setSidebarOpen(true)
+            }
+        }
 
         Scaffold(
             snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -283,50 +445,32 @@ fun PdfReaderScreen(
                         tabs = uiState.tabs,
                         activeTabId = uiState.activeTabId,
                         onSelectTab = { tabId -> viewModel.switchTab(tabId) },
-                        onCloseTab = { tabId ->
-                            val hasRemaining = viewModel.closeTab(tabId)
-                            if (!hasRemaining) onBackToLibrary()
-                        },
-                        onNewTabClick = { openFileLauncher.launch(arrayOf("application/pdf")) },
-                        onBackClick = onBackToLibrary,
+                        onCloseTab = handleCloseTab,
+                        onNewTabClick = handleBackToLibrary,
+                        onBackClick = handleBackToLibrary,
                         onCycleColorMode = { viewModel.cycleColorMode() },
                         onSelectColorMode = { mode -> viewModel.setColorMode(mode) },
                         onCycleLayoutMode = { viewModel.cycleLayoutMode() },
                         onSelectLayoutMode = { mode -> viewModel.setLayoutMode(mode) },
-                        onToggleSidebar = { viewModel.toggleSidebar() }
+                        onToggleSidebar = { viewModel.toggleSidebar() },
+                        onOpenSettings = onOpenSettings
                     )
                 } else {
-                    // Mobile Top Bar
-                    Column {
-                        if (uiState.tabs.size > 1) {
-                            PdfTabBar(
-                                tabs = uiState.tabs,
-                                activeTabId = uiState.activeTabId,
-                                onSelectTab = { tabId -> viewModel.switchTab(tabId) },
-                                onCloseTab = { tabId ->
-                                    val hasRemaining = viewModel.closeTab(tabId)
-                                    if (!hasRemaining) onBackToLibrary()
-                                },
-                                onNewTabClick = { openFileLauncher.launch(arrayOf("application/pdf")) }
-                            )
-                        }
-                        AnimatedVisibility(
-                            visible = !uiState.isImmersive,
-                            enter = slideInVertically(
-                                initialOffsetY = { -it },
-                                animationSpec = spring(
-                                    dampingRatio = Spring.DampingRatioMediumBouncy,
-                                    stiffness = Spring.StiffnessMediumLow
-                                )
-                            ) + fadeIn(),
-                            exit = slideOutVertically(
-                                targetOffsetY = { -it },
-                                animationSpec = spring(
-                                    dampingRatio = Spring.DampingRatioNoBouncy,
-                                    stiffness = Spring.StiffnessMedium
-                                )
-                            ) + fadeOut()
-                        ) {
+                    // Mobile / Compact Top Bar: App Title Bar on top, separated Tab Bar below
+                    val spatialOffsetSpec = MaterialTheme.motionScheme.defaultSpatialSpec<IntOffset>()
+                    val effectsSpec = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
+                    AnimatedVisibility(
+                        visible = !uiState.isImmersive || uiState.isSearchOpen,
+                        enter = slideInVertically(
+                            initialOffsetY = { -it },
+                            animationSpec = spatialOffsetSpec
+                        ) + fadeIn(animationSpec = effectsSpec),
+                        exit = slideOutVertically(
+                            targetOffsetY = { -it },
+                            animationSpec = spatialOffsetSpec
+                        ) + fadeOut(animationSpec = effectsSpec)
+                    ) {
+                        Column {
                             TopAppBar(
                                 title = {
                                     Column {
@@ -350,35 +494,56 @@ fun PdfReaderScreen(
                                     }
                                 },
                                 navigationIcon = {
-                                    FilledTonalIconButton(
-                                        onClick = onBackToLibrary,
-                                        shape = CircleShape,
-                                        modifier = Modifier
-                                            .size(40.dp)
-                                            .padding(start = 4.dp)
-                                    ) {
+                                    IconButton(onClick = handleBackToLibrary) {
                                         Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
                                     }
                                 },
                                 actions = {
                                     ThemeVibrantMenu(
                                         activeColorMode = uiState.colorMode,
-                                        onSelectColorMode = { mode -> viewModel.setColorMode(mode) }
+                                        onSelectColorMode = { mode -> viewModel.setColorMode(mode) },
+                                        activeLayoutMode = uiState.layoutMode,
+                                        onSelectLayoutMode = { mode -> viewModel.setLayoutMode(mode) }
                                     )
-                                    Spacer(modifier = Modifier.width(6.dp))
+                                    IconButton(
+                                        onClick = {
+                                            showPageSliderPill = false
+                                            viewModel.toggleSearch()
+                                        }
+                                    ) {
+                                        Icon(
+                                            imageVector = if (uiState.isSearchOpen) Icons.Rounded.Close else Icons.Rounded.Search,
+                                            contentDescription = if (uiState.isSearchOpen) "Close Search" else "Search in PDF"
+                                        )
+                                    }
                                     FilledTonalIconButton(
                                         onClick = { openFileLauncher.launch(arrayOf("application/pdf")) },
-                                        shape = CircleShape,
-                                        modifier = Modifier.size(40.dp)
+                                        shape = CircleShape
                                     ) {
                                         Icon(Icons.Rounded.FolderOpen, contentDescription = "Open Tab")
                                     }
-                                    Spacer(modifier = Modifier.width(8.dp))
+                                    IconButton(onClick = onOpenSettings) {
+                                        Icon(Icons.Rounded.Settings, contentDescription = "Settings")
+                                    }
+                                    Spacer(modifier = Modifier.width(4.dp))
                                 },
                                 colors = TopAppBarDefaults.topAppBarColors(
                                     containerColor = MaterialTheme.colorScheme.surfaceContainer
                                 )
                             )
+                            if (uiState.tabs.size > 1 || (appSettings.showTabBarOnSingleTab && uiState.tabs.isNotEmpty())) {
+                                HorizontalDivider(
+                                    thickness = 1.dp,
+                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                                )
+                                ExpressiveTabBar(
+                                    tabs = uiState.tabs,
+                                    activeTabId = uiState.activeTabId,
+                                    onSelectTab = { tabId -> viewModel.switchTab(tabId) },
+                                    onCloseTab = handleCloseTab,
+                                    onNewTabClick = handleBackToLibrary
+                                )
+                            }
                         }
                     }
                 }
@@ -398,34 +563,44 @@ fun PdfReaderScreen(
                         ErrorView(
                             message = loadState.message,
                             canRelocate = loadState.canRelocate,
-                            onPickFile = { openFileLauncher.launch(arrayOf("application/pdf")) },
-                            onBackToLibrary = onBackToLibrary
+                            onPickFile = { relocateFileLauncher.launch(arrayOf("application/pdf")) },
+                            onBackToLibrary = {
+                                val failedTabId = uiState.activeTabId
+                                if (failedTabId != null && uiState.tabs.size <= 1) {
+                                    handleCloseTab(failedTabId)
+                                } else {
+                                    handleBackToLibrary()
+                                }
+                            }
                         )
                     }
 
                     is DocumentLoadState.Success -> {
+                        val activeDocId = uiState.activeTabId ?: ""
                         Row(modifier = Modifier.fillMaxSize()) {
-                            // Laptop / Large Screen: Persistent or Collapsible Sidebar
-                            if (isLargeScreen && uiState.isSidebarOpen) {
+                            // Laptop / Large Screen: Animated Collapsible Sidebar
+                            AnimatedVisibility(
+                                visible = isLargeScreen && uiState.isSidebarOpen,
+                                enter = expandHorizontally(
+                                    animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec()
+                                ) + fadeIn(animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec()),
+                                exit = shrinkHorizontally(
+                                    animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec()
+                                ) + fadeOut(animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec())
+                            ) {
                                 ThumbnailSidebar(
+                                    documentId = activeDocId,
                                     activeTab = uiState.activeSidebarTab,
                                     totalPages = uiState.totalPages,
                                     currentPage = uiState.currentPage,
                                     documentTitle = loadState.title,
                                     fileSizeBytes = loadState.fileSizeBytes,
                                     colorMode = uiState.colorMode,
-                                    loadThumbnail = { pageIndex -> viewModel.getThumbnailBitmap(pageIndex) },
+                                    loadThumbnail = { pageIndex -> viewModel.getThumbnailBitmap(activeDocId, pageIndex) },
                                     onSelectTab = { tab -> viewModel.setSidebarTab(tab) },
                                     onPageClick = { page ->
                                         viewModel.setPage(page)
-                                        scope.launch {
-                                            val item = if (uiState.layoutMode == PdfViewLayoutMode.TWO_PAGE) {
-                                                (page - 1) / 2
-                                            } else {
-                                                page - 1
-                                            }
-                                            listState.animateScrollToItem(item.coerceAtLeast(0))
-                                        }
+                                        scrollToPage(page, true)
                                     },
                                     onCloseSidebar = { viewModel.setSidebarOpen(false) }
                                 )
@@ -434,11 +609,67 @@ fun PdfReaderScreen(
                             // Calculate available viewport width for the page canvas
                             val availableViewportWidth = screenMaxWidth - (if (isLargeScreen && uiState.isSidebarOpen) 320.dp else 0.dp)
 
-                            // Main Viewport: Horizontally scrollable container + LazyColumn of scaled pages
+                            // Main Viewport: Pinch-to-zoom + Horizontally scrollable container + LazyColumn of scaled pages
                             Box(
                                 modifier = Modifier
                                     .weight(1f)
-                                    .fillMaxHeight(),
+                                    .fillMaxHeight()
+                                    .pointerInput(appSettings.pinchToZoom) {
+                                        if (!appSettings.pinchToZoom) return@pointerInput
+                                        awaitEachGesture {
+                                            awaitFirstDown(requireUnconsumed = false)
+                                            var pastTouchSlop = false
+                                            var zoom = 1f
+                                            val touchSlop = viewConfiguration.touchSlop
+
+                                            do {
+                                                val event = awaitPointerEvent(PointerEventPass.Initial)
+                                                val pressedCount = event.changes.count { it.pressed }
+                                                if (pressedCount >= 2) {
+                                                    val zoomChange = event.calculateZoom()
+                                                    val panChange = event.calculatePan()
+
+                                                    if (!pastTouchSlop) {
+                                                        zoom *= zoomChange
+                                                        val centroidSize = event.calculateCentroidSize(useCurrent = false)
+                                                        val zoomMotion = kotlin.math.abs(1f - zoom) * centroidSize
+                                                        if (zoomMotion > touchSlop) {
+                                                            pastTouchSlop = true
+                                                        }
+                                                    }
+
+                                                    if (pastTouchSlop) {
+                                                        if (zoomChange != 1f) {
+                                                            viewModel.zoomBy(zoomChange)
+                                                        }
+                                                        if (panChange.x != 0f) {
+                                                            horizontalScrollState.dispatchRawDelta(-panChange.x)
+                                                        }
+                                                        if (panChange.y != 0f) {
+                                                            listState.dispatchRawDelta(-panChange.y)
+                                                        }
+                                                    }
+                                                    // Consume 2+ finger events in Initial pass so child scrollables/tap detectors don't steal the pinch
+                                                    event.changes.forEach { it.consume() }
+                                                }
+                                            } while (event.changes.any { it.pressed })
+                                        }
+                                    }
+                                    .pointerInput(Unit) {
+                                        awaitPointerEventScope {
+                                            while (true) {
+                                                val event = awaitPointerEvent()
+                                                if (event.type == PointerEventType.Scroll && event.keyboardModifiers.isPointerCtrlPressed) {
+                                                    val scrollDelta = event.changes.firstOrNull()?.scrollDelta?.y ?: 0f
+                                                    if (scrollDelta < 0) {
+                                                        viewModel.zoomIn()
+                                                    } else if (scrollDelta > 0) {
+                                                        viewModel.zoomOut()
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    },
                                 contentAlignment = Alignment.TopCenter
                             ) {
                                 Box(
@@ -464,19 +695,15 @@ fun PdfReaderScreen(
                                             state = listState,
                                             modifier = Modifier
                                                 .width(dualEffectiveWidth * 2 + 24.dp)
-                                                .fillMaxHeight()
-                                                .pointerInput(Unit) {
-                                                    detectTransformGestures { _, _, zoomChange, _ ->
-                                                        if (zoomChange != 1.0f) {
-                                                            viewModel.setZoom(uiState.zoomLevel * zoomChange)
-                                                        }
-                                                    }
-                                                },
+                                                .fillMaxHeight(),
                                             contentPadding = PaddingValues(vertical = 12.dp),
                                             verticalArrangement = Arrangement.spacedBy(12.dp),
                                             horizontalAlignment = Alignment.CenterHorizontally
                                         ) {
-                                            items(pagePairs.size) { pairIndex ->
+                                            items(
+                                                count = pagePairs.size,
+                                                key = { pairIdx -> "${uiState.activeTabId ?: ""}_pair_$pairIdx" }
+                                            ) { pairIndex ->
                                                 val (leftPageIndex, rightPageIndex) = pagePairs[pairIndex]
                                                 val leftMatches = pageSearchMatches[leftPageIndex] ?: emptyList()
                                                 val isLeftCurrent = currentMatch != null && currentMatch.pageIndex == leftPageIndex
@@ -489,15 +716,24 @@ fun PdfReaderScreen(
                                                 ) {
                                                     PdfPageItem(
                                                         pageIndex = leftPageIndex,
+                                                        documentId = activeDocId,
                                                         totalPages = loadState.pageCount,
                                                         pageWidth = dualEffectiveWidth,
                                                         scaleFactor = uiState.zoomLevel,
                                                         colorMode = uiState.colorMode,
-                                                        loadBitmap = { idx, targetW, scale ->
-                                                            viewModel.getPageBitmap(idx, targetW, scale)
+                                                        loadBitmap = { idx, targetW, _ ->
+                                                            viewModel.getPageBitmap(activeDocId, idx, targetW)
                                                         },
-                                                        onTap = { viewModel.toggleImmersive() },
-                                                        onDoubleTap = { viewModel.handleDoubleTapZoom() },
+                                                        onTap = { if (appSettings.tapToToggleImmersive && !uiState.isSearchOpen) viewModel.toggleImmersive() },
+                                                        onDoubleTap = { if (appSettings.doubleTapToZoom) viewModel.handleDoubleTapZoom() },
+                                                        loadTextSegments = { idx -> viewModel.getPageTextSegments(activeDocId, idx) },
+                                                        onSelectNativeContent = { idx, sx, sy, ex, ey ->
+                                                            viewModel.selectContent(activeDocId, idx, sx, sy, ex, ey)
+                                                        },
+                                                        onSearchSelectedText = { query ->
+                                                            viewModel.setSearchOpen(true)
+                                                            viewModel.onSearchQueryChanged(query)
+                                                        },
                                                         searchMatches = leftMatches,
                                                         isCurrentMatchPage = isLeftCurrent,
                                                         activeMatchIndexInPage = leftActiveMatchIndex
@@ -510,15 +746,24 @@ fun PdfReaderScreen(
 
                                                         PdfPageItem(
                                                             pageIndex = rightPageIndex,
+                                                            documentId = activeDocId,
                                                             totalPages = loadState.pageCount,
                                                             pageWidth = dualEffectiveWidth,
                                                             scaleFactor = uiState.zoomLevel,
                                                             colorMode = uiState.colorMode,
-                                                            loadBitmap = { idx, targetW, scale ->
-                                                                viewModel.getPageBitmap(idx, targetW, scale)
+                                                            loadBitmap = { idx, targetW, _ ->
+                                                                viewModel.getPageBitmap(activeDocId, idx, targetW)
                                                             },
-                                                            onTap = { viewModel.toggleImmersive() },
-                                                            onDoubleTap = { viewModel.handleDoubleTapZoom() },
+                                                            onTap = { if (appSettings.tapToToggleImmersive && !uiState.isSearchOpen) viewModel.toggleImmersive() },
+                                                            onDoubleTap = { if (appSettings.doubleTapToZoom) viewModel.handleDoubleTapZoom() },
+                                                            loadTextSegments = { idx -> viewModel.getPageTextSegments(activeDocId, idx) },
+                                                            onSelectNativeContent = { idx, sx, sy, ex, ey ->
+                                                                viewModel.selectContent(activeDocId, idx, sx, sy, ex, ey)
+                                                            },
+                                                            onSearchSelectedText = { query ->
+                                                                viewModel.setSearchOpen(true)
+                                                                viewModel.onSearchQueryChanged(query)
+                                                            },
                                                             searchMatches = rightMatches,
                                                             isCurrentMatchPage = isRightCurrent,
                                                             activeMatchIndexInPage = rightActiveMatchIndex
@@ -538,51 +783,39 @@ fun PdfReaderScreen(
                                             state = listState,
                                             modifier = Modifier
                                                 .width(effectivePageWidth)
-                                                .fillMaxHeight()
-                                                .pointerInput(Unit) {
-                                                    detectTransformGestures { _, _, zoomChange, _ ->
-                                                        if (zoomChange != 1.0f) {
-                                                            viewModel.setZoom(uiState.zoomLevel * zoomChange)
-                                                        }
-                                                    }
-                                                }
-                                                .pointerInput(Unit) {
-                                                    awaitPointerEventScope {
-                                                        while (true) {
-                                                            val event = awaitPointerEvent()
-                                                            if (event.type == PointerEventType.Scroll) {
-                                                                if (event.keyboardModifiers.isPointerCtrlPressed) {
-                                                                    val scrollDelta = event.changes.firstOrNull()?.scrollDelta?.y ?: 0f
-                                                                    if (scrollDelta < 0) {
-                                                                         viewModel.zoomIn()
-                                                                    } else if (scrollDelta > 0) {
-                                                                        viewModel.zoomOut()
-                                                                    }
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                },
+                                                .fillMaxHeight(),
                                             contentPadding = PaddingValues(vertical = 12.dp),
                                             verticalArrangement = Arrangement.spacedBy(12.dp),
                                             horizontalAlignment = Alignment.CenterHorizontally
                                         ) {
-                                            items(loadState.pageCount) { pageIndex ->
+                                            items(
+                                                count = loadState.pageCount,
+                                                key = { pageIdx -> "${activeDocId}_page_$pageIdx" }
+                                            ) { pageIndex ->
                                                 val pageMatches = pageSearchMatches[pageIndex] ?: emptyList()
                                                 val isCurrent = currentMatch != null && currentMatch.pageIndex == pageIndex
                                                 val activeMatchIndex = if (isCurrent) currentMatch.matchIndexInPage else null
 
                                                 PdfPageItem(
                                                     pageIndex = pageIndex,
+                                                    documentId = activeDocId,
                                                     totalPages = loadState.pageCount,
                                                     pageWidth = effectivePageWidth,
                                                     scaleFactor = uiState.zoomLevel,
                                                     colorMode = uiState.colorMode,
-                                                    loadBitmap = { idx, targetW, scale ->
-                                                        viewModel.getPageBitmap(idx, targetW, scale)
+                                                    loadBitmap = { idx, targetW, _ ->
+                                                        viewModel.getPageBitmap(activeDocId, idx, targetW)
                                                     },
-                                                    onTap = { viewModel.toggleImmersive() },
-                                                    onDoubleTap = { viewModel.handleDoubleTapZoom() },
+                                                    onTap = { if (appSettings.tapToToggleImmersive && !uiState.isSearchOpen) viewModel.toggleImmersive() },
+                                                    onDoubleTap = { if (appSettings.doubleTapToZoom) viewModel.handleDoubleTapZoom() },
+                                                    loadTextSegments = { idx -> viewModel.getPageTextSegments(activeDocId, idx) },
+                                                    onSelectNativeContent = { idx, sx, sy, ex, ey ->
+                                                        viewModel.selectContent(activeDocId, idx, sx, sy, ex, ey)
+                                                    },
+                                                    onSearchSelectedText = { query ->
+                                                        viewModel.setSearchOpen(true)
+                                                        viewModel.onSearchQueryChanged(query)
+                                                    },
                                                     searchMatches = pageMatches,
                                                     isCurrentMatchPage = isCurrent,
                                                     activeMatchIndexInPage = activeMatchIndex
@@ -592,57 +825,101 @@ fun PdfReaderScreen(
                                     }
                                 }
 
+
+
                                 // Phone Mobile Floating Toolbar at bottom
                                 if (!isLargeScreen) {
-                                    MobileFloatingToolbar(
-                                        isVisible = !uiState.isImmersive,
-                                        currentPage = uiState.currentPage,
-                                        totalPages = uiState.totalPages,
-                                        colorMode = uiState.colorMode,
-                                        layoutMode = uiState.layoutMode,
-                                        isPageSliderPillOpen = showPageSliderPill,
-                                        onTogglePageSliderPill = { showPageSliderPill = !showPageSliderPill },
-                                        onPreviousPage = {
-                                            viewModel.previousPage()
-                                            scope.launch { listState.animateScrollToItem((uiState.currentPage - 2).coerceAtLeast(0)) }
-                                        },
-                                        onNextPage = {
-                                            viewModel.nextPage()
-                                            scope.launch { listState.animateScrollToItem(uiState.currentPage.coerceAtMost(uiState.totalPages - 1)) }
-                                        },
-                                        onPageJump = { page ->
-                                            viewModel.setPage(page)
-                                            scope.launch { listState.scrollToItem((page - 1).coerceAtLeast(0)) }
-                                        },
-                                        onCycleLayoutMode = { viewModel.cycleLayoutMode() },
-                                        onCycleColorMode = { viewModel.cycleColorMode() },
-                                        onToggleSidebar = { viewModel.toggleSidebar() },
+                                    val spatialOffsetSpec = MaterialTheme.motionScheme.defaultSpatialSpec<IntOffset>()
+                                    val effectsSpec = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
+                                    Column(
                                         modifier = Modifier
                                             .align(Alignment.BottomCenter)
-                                            .padding(bottom = 24.dp)
-                                    )
+                                            .padding(bottom = 24.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        // Mobile Search Pop-up Pill when active
+                                        AnimatedVisibility(
+                                            visible = uiState.isSearchOpen,
+                                            enter = fadeIn(animationSpec = effectsSpec) +
+                                                    slideInVertically(
+                                                        initialOffsetY = { fullHeight -> fullHeight / 2 },
+                                                        animationSpec = spatialOffsetSpec
+                                                    ),
+                                            exit = fadeOut(animationSpec = effectsSpec) +
+                                                   slideOutVertically(
+                                                       targetOffsetY = { fullHeight -> fullHeight / 2 },
+                                                       animationSpec = spatialOffsetSpec
+                                                   )
+                                        ) {
+                                            SearchPill(
+                                                searchQuery = uiState.searchQuery,
+                                                onSearchQueryChange = { viewModel.onSearchQueryChanged(it) },
+                                                currentMatchIndex = uiState.currentMatchIndex,
+                                                totalMatches = uiState.searchMatches.size,
+                                                isSearching = uiState.isSearching,
+                                                onPreviousMatch = {
+                                                    val match = viewModel.previousSearchMatch()
+                                                    if (match != null) {
+                                                        scrollToPage(match.pageIndex + 1, true)
+                                                    }
+                                                },
+                                                onNextMatch = {
+                                                    val match = viewModel.nextSearchMatch()
+                                                    if (match != null) {
+                                                        scrollToPage(match.pageIndex + 1, true)
+                                                    }
+                                                },
+                                                onCloseSearch = { viewModel.setSearchOpen(false) }
+                                            )
+                                        }
+
+                                        MobileFloatingToolbar(
+                                            isVisible = !uiState.isImmersive || uiState.isSearchOpen,
+                                            currentPage = uiState.currentPage,
+                                            totalPages = uiState.totalPages,
+                                            colorMode = uiState.colorMode,
+                                            layoutMode = uiState.layoutMode,
+                                            isPageSliderPillOpen = showPageSliderPill,
+                                            onTogglePageSliderPill = {
+                                                if (!showPageSliderPill) viewModel.setSearchOpen(false)
+                                                showPageSliderPill = !showPageSliderPill
+                                            },
+                                            onPreviousPage = {
+                                                val step = if (uiState.layoutMode == PdfViewLayoutMode.TWO_PAGE) 2 else 1
+                                                val targetPage = PdfPageHelper.clampPage(uiState.currentPage - step, uiState.totalPages)
+                                                viewModel.previousPage()
+                                                scrollToPage(targetPage, true)
+                                            },
+                                            onNextPage = {
+                                                val step = if (uiState.layoutMode == PdfViewLayoutMode.TWO_PAGE) 2 else 1
+                                                val targetPage = PdfPageHelper.clampPage(uiState.currentPage + step, uiState.totalPages)
+                                                viewModel.nextPage()
+                                                scrollToPage(targetPage, true)
+                                            },
+                                            onPageJump = { page ->
+                                                viewModel.setPage(page)
+                                                scrollToPage(page, false)
+                                            },
+                                            onCycleLayoutMode = { viewModel.cycleLayoutMode() },
+                                            onCycleColorMode = { viewModel.cycleColorMode() },
+                                            onToggleSidebar = { viewModel.toggleSidebar() },
+                                            isSearchOpen = uiState.isSearchOpen,
+                                            onToggleSearch = {
+                                                showPageSliderPill = false
+                                                viewModel.toggleSearch()
+                                            }
+                                        )
+                                    }
                                 }
 
                                 // Desktop / Laptop Expressive Vertical Floating Toolbar for Zoom & Page Navigation (Bottom-Right)
                                 if (isLargeScreen) {
-                                    // Scrim to dismiss page slider pill or search pill when clicking anywhere outside
-                                    if (showPageSliderPill || uiState.isSearchOpen) {
-                                        Box(
-                                            modifier = Modifier
-                                                .fillMaxSize()
-                                                .pointerInput(Unit) {
-                                                    detectTapGestures {
-                                                        showPageSliderPill = false
-                                                        viewModel.setSearchOpen(false)
-                                                    }
-                                                }
-                                        )
-                                    }
-
+                                    val effectsSpec = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
                                     androidx.compose.animation.AnimatedVisibility(
-                                        visible = !uiState.isImmersive,
-                                        enter = fadeIn(),
-                                        exit = fadeOut(),
+                                        visible = !uiState.isImmersive || uiState.isSearchOpen,
+                                        enter = fadeIn(animationSpec = effectsSpec),
+                                        exit = fadeOut(animationSpec = effectsSpec),
                                         modifier = Modifier
                                             .align(Alignment.BottomEnd)
                                             .padding(end = 24.dp, bottom = 24.dp)
@@ -657,37 +934,20 @@ fun PdfReaderScreen(
                                                 showPageSliderPill = !showPageSliderPill
                                             },
                                             onPreviousPage = {
+                                                val step = if (uiState.layoutMode == PdfViewLayoutMode.TWO_PAGE) 2 else 1
+                                                val targetPage = PdfPageHelper.clampPage(uiState.currentPage - step, uiState.totalPages)
                                                 viewModel.previousPage()
-                                                scope.launch {
-                                                    val item = if (uiState.layoutMode == PdfViewLayoutMode.TWO_PAGE) {
-                                                        (uiState.currentPage - 2).coerceAtLeast(0) / 2
-                                                    } else {
-                                                        (uiState.currentPage - 2).coerceAtLeast(0)
-                                                    }
-                                                    listState.animateScrollToItem(item)
-                                                }
+                                                scrollToPage(targetPage, true)
                                             },
                                             onNextPage = {
+                                                val step = if (uiState.layoutMode == PdfViewLayoutMode.TWO_PAGE) 2 else 1
+                                                val targetPage = PdfPageHelper.clampPage(uiState.currentPage + step, uiState.totalPages)
                                                 viewModel.nextPage()
-                                                scope.launch {
-                                                    val item = if (uiState.layoutMode == PdfViewLayoutMode.TWO_PAGE) {
-                                                        uiState.currentPage / 2
-                                                    } else {
-                                                        uiState.currentPage
-                                                    }
-                                                    listState.animateScrollToItem(item.coerceAtMost(uiState.totalPages - 1))
-                                                }
+                                                scrollToPage(targetPage, true)
                                             },
                                             onPageJump = { page ->
                                                 viewModel.setPage(page)
-                                                scope.launch {
-                                                    val item = if (uiState.layoutMode == PdfViewLayoutMode.TWO_PAGE) {
-                                                        (page - 1) / 2
-                                                    } else {
-                                                        page - 1
-                                                    }
-                                                    listState.scrollToItem(item.coerceAtLeast(0))
-                                                }
+                                                scrollToPage(page, false)
                                             },
                                             onZoomIn = { viewModel.zoomIn() },
                                             onZoomOut = { viewModel.zoomOut() },
@@ -706,27 +966,13 @@ fun PdfReaderScreen(
                                             onPreviousMatch = {
                                                 val match = viewModel.previousSearchMatch()
                                                 if (match != null) {
-                                                    scope.launch {
-                                                        val item = if (uiState.layoutMode == PdfViewLayoutMode.TWO_PAGE) {
-                                                            match.pageIndex / 2
-                                                        } else {
-                                                            match.pageIndex
-                                                        }
-                                                        listState.animateScrollToItem(item)
-                                                    }
+                                                    scrollToPage(match.pageIndex + 1, true)
                                                 }
                                             },
                                             onNextMatch = {
                                                 val match = viewModel.nextSearchMatch()
                                                 if (match != null) {
-                                                    scope.launch {
-                                                        val item = if (uiState.layoutMode == PdfViewLayoutMode.TWO_PAGE) {
-                                                            match.pageIndex / 2
-                                                        } else {
-                                                            match.pageIndex
-                                                        }
-                                                        listState.animateScrollToItem(item)
-                                                    }
+                                                    scrollToPage(match.pageIndex + 1, true)
                                                 }
                                             },
                                             onCloseSearch = { viewModel.setSearchOpen(false) }
@@ -743,17 +989,18 @@ fun PdfReaderScreen(
                                 sheetState = rememberModalBottomSheetState()
                             ) {
                                 ThumbnailSidebar(
+                                    documentId = activeDocId,
                                     activeTab = uiState.activeSidebarTab,
                                     totalPages = uiState.totalPages,
                                     currentPage = uiState.currentPage,
                                     documentTitle = loadState.title,
                                     fileSizeBytes = loadState.fileSizeBytes,
                                     colorMode = uiState.colorMode,
-                                    loadThumbnail = { pageIndex -> viewModel.getThumbnailBitmap(pageIndex) },
+                                    loadThumbnail = { pageIndex -> viewModel.getThumbnailBitmap(activeDocId, pageIndex) },
                                     onSelectTab = { tab -> viewModel.setSidebarTab(tab) },
                                     onPageClick = { page ->
                                         viewModel.setPage(page)
-                                        scope.launch { listState.animateScrollToItem(page - 1) }
+                                        scrollToPage(page, true)
                                         viewModel.setSidebarOpen(false)
                                     },
                                     onCloseSidebar = { viewModel.setSidebarOpen(false) },
@@ -780,38 +1027,50 @@ fun PdfReaderScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun LoadingView(title: String, modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
     ) {
-        Card(
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
-        ) {
-            Column(
-                modifier = Modifier.padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-                Spacer(modifier = Modifier.height(16.dp))
-                Text(
-                    text = "Opening Document...",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
+        ContainedLoadingIndicator(
+            modifier = Modifier.size(64.dp)
+        )
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Text(
+            text = "Opening Document",
+            style = EmphasizedTypography.headlineSmall,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Text(
+            text = title,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 24.dp)
+        )
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        LinearWavyProgressIndicator(
+            modifier = Modifier
+                .width(200.dp)
+                .height(6.dp)
+        )
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun ErrorView(
     message: String,
@@ -820,49 +1079,69 @@ fun ErrorView(
     onBackToLibrary: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { visible = true }
+
     Box(
         modifier = modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
     ) {
-        Card(
-            modifier = Modifier
-                .padding(24.dp)
-                .fillMaxWidth(0.85f),
-            shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
+        AnimatedVisibility(
+            visible = visible,
+            enter = scaleIn(
+                initialScale = 0.92f,
+                animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec()
+            ) + fadeIn(animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec())
         ) {
-            Column(
-                modifier = Modifier.padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+            Card(
+                modifier = Modifier
+                    .padding(24.dp)
+                    .fillMaxWidth(0.85f),
+                shape = MaterialTheme.shapes.extraLarge,
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
             ) {
-                Icon(
-                    imageVector = Icons.Rounded.ErrorOutline,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onErrorContainer,
-                    modifier = Modifier.size(48.dp)
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                Text(
-                    text = "Cannot Open Document",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onErrorContainer
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = message,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.85f)
-                )
-                Spacer(modifier = Modifier.height(20.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    if (canRelocate) {
-                        Button(onClick = onPickFile, shape = RoundedCornerShape(12.dp)) {
-                            Text("Locate File")
-                        }
+                Column(
+                    modifier = Modifier.padding(28.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(64.dp)
+                            .background(
+                                color = MaterialTheme.colorScheme.error.copy(alpha = 0.14f),
+                                shape = CircleShape
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.ErrorOutline,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.size(34.dp)
+                        )
                     }
-                    OutlinedButton(onClick = onBackToLibrary, shape = RoundedCornerShape(12.dp)) {
-                        Text("Library")
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "Cannot Open Document",
+                        style = EmphasizedTypography.titleLarge,
+                        color = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = message,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.85f)
+                    )
+                    Spacer(modifier = Modifier.height(24.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        if (canRelocate) {
+                            Button(onClick = onPickFile, shape = MaterialTheme.shapes.medium) {
+                                Text("Locate File", style = EmphasizedTypography.labelLarge)
+                            }
+                        }
+                        OutlinedButton(onClick = onBackToLibrary, shape = MaterialTheme.shapes.medium) {
+                            Text("Library", style = EmphasizedTypography.labelLarge)
+                        }
                     }
                 }
             }

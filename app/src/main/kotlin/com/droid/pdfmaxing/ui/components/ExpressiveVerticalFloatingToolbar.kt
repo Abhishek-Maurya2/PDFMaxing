@@ -1,8 +1,6 @@
 package com.droid.pdfmaxing.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -10,12 +8,10 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -31,15 +27,17 @@ import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.FloatingToolbarDefaults
-import androidx.compose.material3.FloatingToolbarVerticalFabPosition
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -69,15 +67,15 @@ import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import kotlin.math.roundToInt
 
 // Official Material 3 Expressive Connected Shapes for Vertical Button Groups:
-// Outer corners are fully rounded (22.dp) and inner connecting corners are 4.dp
+// Outer corners use M3E 20.dp step and inner connecting corners are 4.dp
 private val ConnectedTopShape = RoundedCornerShape(
-    topStart = 22.dp,
-    topEnd = 22.dp,
+    topStart = 20.dp,
+    topEnd = 20.dp,
     bottomStart = 4.dp,
     bottomEnd = 4.dp
 )
@@ -87,12 +85,9 @@ private val ConnectedMiddleShape = RoundedCornerShape(4.dp)
 private val ConnectedBottomShape = RoundedCornerShape(
     topStart = 4.dp,
     topEnd = 4.dp,
-    bottomStart = 22.dp,
-    bottomEnd = 22.dp
+    bottomStart = 20.dp,
+    bottomEnd = 20.dp
 )
-
-// Official M3 Expressive Connected Button Group space between adjacent buttons
-private val ConnectedSpaceBetween = 2.dp
 
 /**
  * Material 3 Expressive Vertical Floating Toolbar hosting filled connected button groups
@@ -126,6 +121,10 @@ fun ExpressiveVerticalFloatingToolbar(
     onCloseSearch: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val spatialOffsetSpec = MaterialTheme.motionScheme.defaultSpatialSpec<IntOffset>()
+    val spatialScaleSpec = MaterialTheme.motionScheme.defaultSpatialSpec<Float>()
+    val effectsSpec = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
+
     Row(
         modifier = modifier,
         verticalAlignment = Alignment.Bottom,
@@ -134,37 +133,25 @@ fun ExpressiveVerticalFloatingToolbar(
         // === 1. Springy Expressive Search Pop-up Pill ===
         AnimatedVisibility(
             visible = isSearchOpen,
-            enter = fadeIn(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) +
+            enter = fadeIn(animationSpec = effectsSpec) +
                     slideInHorizontally(
                         initialOffsetX = { fullWidth -> fullWidth / 2 },
-                        animationSpec = spring(
-                            dampingRatio = Spring.DampingRatioMediumBouncy,
-                            stiffness = Spring.StiffnessMediumLow
-                        )
+                        animationSpec = spatialOffsetSpec
                     ) +
                     scaleIn(
-                        initialScale = 0.8f,
+                        initialScale = 0.85f,
                         transformOrigin = TransformOrigin(1f, 0.5f),
-                        animationSpec = spring(
-                            dampingRatio = Spring.DampingRatioMediumBouncy,
-                            stiffness = Spring.StiffnessMediumLow
-                        )
+                        animationSpec = spatialScaleSpec
                     ),
-            exit = fadeOut(animationSpec = spring(stiffness = Spring.StiffnessMedium)) +
+            exit = fadeOut(animationSpec = effectsSpec) +
                    slideOutHorizontally(
                        targetOffsetX = { fullWidth -> fullWidth / 2 },
-                       animationSpec = spring(
-                           dampingRatio = Spring.DampingRatioNoBouncy,
-                           stiffness = Spring.StiffnessMedium
-                       )
+                       animationSpec = spatialOffsetSpec
                    ) +
                    scaleOut(
-                       targetScale = 0.8f,
+                       targetScale = 0.85f,
                        transformOrigin = TransformOrigin(1f, 0.5f),
-                       animationSpec = spring(
-                           dampingRatio = Spring.DampingRatioNoBouncy,
-                           stiffness = Spring.StiffnessMedium
-                       )
+                       animationSpec = spatialScaleSpec
                    ),
             modifier = Modifier.padding(bottom = 8.dp)
         ) {
@@ -183,37 +170,25 @@ fun ExpressiveVerticalFloatingToolbar(
         // === 2. Springy Expressive Slider & Page Number Pill (when search is not active) ===
         AnimatedVisibility(
             visible = isPageSliderPillOpen && !isSearchOpen,
-            enter = fadeIn(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) +
+            enter = fadeIn(animationSpec = effectsSpec) +
                     slideInHorizontally(
                         initialOffsetX = { fullWidth -> fullWidth / 2 },
-                        animationSpec = spring(
-                            dampingRatio = Spring.DampingRatioMediumBouncy,
-                            stiffness = Spring.StiffnessMediumLow
-                        )
+                        animationSpec = spatialOffsetSpec
                     ) +
                     scaleIn(
-                        initialScale = 0.8f,
+                        initialScale = 0.85f,
                         transformOrigin = TransformOrigin(1f, 0.5f),
-                        animationSpec = spring(
-                            dampingRatio = Spring.DampingRatioMediumBouncy,
-                            stiffness = Spring.StiffnessMediumLow
-                        )
+                        animationSpec = spatialScaleSpec
                     ),
-            exit = fadeOut(animationSpec = spring(stiffness = Spring.StiffnessMedium)) +
+            exit = fadeOut(animationSpec = effectsSpec) +
                    slideOutHorizontally(
                        targetOffsetX = { fullWidth -> fullWidth / 2 },
-                       animationSpec = spring(
-                           dampingRatio = Spring.DampingRatioNoBouncy,
-                           stiffness = Spring.StiffnessMedium
-                       )
+                       animationSpec = spatialOffsetSpec
                    ) +
                    scaleOut(
-                       targetScale = 0.8f,
+                       targetScale = 0.85f,
                        transformOrigin = TransformOrigin(1f, 0.5f),
-                       animationSpec = spring(
-                           dampingRatio = Spring.DampingRatioNoBouncy,
-                           stiffness = Spring.StiffnessMedium
-                       )
+                       animationSpec = spatialScaleSpec
                    ),
             modifier = Modifier.padding(bottom = 44.dp)
         ) {
@@ -224,126 +199,128 @@ fun ExpressiveVerticalFloatingToolbar(
             )
         }
 
-        // === 3. Vertical Floating Toolbar with Attached FAB ===
-        VerticalFloatingToolbar(
-            expanded = true,
-            floatingActionButton = {
-                FloatingToolbarDefaults.VibrantFloatingActionButton(
-                    onClick = onToggleSearch,
-                    modifier = Modifier.pointerHoverIcon(PointerIcon.Hand)
+        // === 3. Vertical Floating Toolbar (standard emphasis) and Primary FAB (single hero emphasis) ===
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            VerticalFloatingToolbar(
+                expanded = true,
+                colors = FloatingToolbarDefaults.standardFloatingToolbarColors()
+            ) {
+                // === Zoom Controls: Connected Button Group (+ and -) ===
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween),
+                    modifier = Modifier.align(Alignment.CenterHorizontally)
                 ) {
-                    Icon(
-                        imageVector = if (isSearchOpen) Icons.Rounded.Close else Icons.Rounded.Search,
-                        contentDescription = if (isSearchOpen) "Close Search" else "Search in PDF"
+                    // Zoom In (Leading / Top Button)
+                    ConnectedIconButton(
+                        icon = Icons.Rounded.Add,
+                        contentDescription = "Zoom In",
+                        onClick = onZoomIn,
+                        enabled = zoomLevel < 5.0f,
+                        shape = ConnectedTopShape
+                    )
+
+                    // Zoom Out (Trailing / Bottom Button)
+                    ConnectedIconButton(
+                        icon = Icons.Rounded.Remove,
+                        contentDescription = "Zoom Out",
+                        onClick = onZoomOut,
+                        enabled = zoomLevel > 0.5f,
+                        shape = ConnectedBottomShape
                     )
                 }
-            },
-            floatingActionButtonPosition = FloatingToolbarVerticalFabPosition.Bottom,
-            colors = FloatingToolbarDefaults.vibrantFloatingToolbarColors()
-        ) {
-            // === Zoom Controls: Filled Connected Button Group (+ and -) ===
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(ConnectedSpaceBetween),
-                modifier = Modifier.align(Alignment.CenterHorizontally)
-            ) {
-                // Zoom In (Leading / Top Button)
-                ConnectedIconButton(
-                    icon = Icons.Rounded.Add,
-                    contentDescription = "Zoom In",
-                    onClick = onZoomIn,
-                    enabled = zoomLevel < 5.0f,
-                    shape = ConnectedTopShape
+
+                // Divider between Zoom and Page Navigation controls
+                HorizontalDivider(
+                    modifier = Modifier
+                        .width(28.dp)
+                        .align(Alignment.CenterHorizontally)
+                        .padding(vertical = 8.dp),
+                    thickness = 1.dp,
+                    color = MaterialTheme.colorScheme.outlineVariant
                 )
 
-                // Zoom Out (Trailing / Bottom Button)
-                ConnectedIconButton(
-                    icon = Icons.Rounded.Remove,
-                    contentDescription = "Zoom Out",
-                    onClick = onZoomOut,
-                    enabled = zoomLevel > 0.5f,
-                    shape = ConnectedBottomShape
-                )
+                // === Page Navigation: Connected Button Group ===
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween),
+                    modifier = Modifier.align(Alignment.CenterHorizontally)
+                ) {
+                    // Previous Page (Leading / Top Button)
+                    ConnectedIconButton(
+                        icon = Icons.Rounded.KeyboardArrowUp,
+                        contentDescription = "Previous Page",
+                        onClick = onPreviousPage,
+                        enabled = currentPage > 1,
+                        shape = ConnectedTopShape
+                    )
+
+                    // Page Indicator Button (Toggles the slider pill)
+                    FilledTonalIconButton(
+                        onClick = onTogglePageSliderPill,
+                        shape = ConnectedMiddleShape,
+                        colors = if (isPageSliderPillOpen) {
+                            IconButtonDefaults.filledTonalIconButtonColors(
+                                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        } else {
+                            IconButtonDefaults.filledTonalIconButtonColors()
+                        },
+                        modifier = Modifier
+                            .size(48.dp)
+                            .pointerHoverIcon(PointerIcon.Hand)
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Text(
+                                text = "$currentPage",
+                                style = MaterialTheme.typography.labelMedium.copy(
+                                    fontWeight = FontWeight.Bold
+                                ),
+                                textAlign = TextAlign.Center
+                            )
+                            Text(
+                                text = "$totalPages",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (isPageSliderPillOpen) {
+                                    MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
+                                } else {
+                                    MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f)
+                                },
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+
+                    // Next Page (Trailing / Bottom Button)
+                    ConnectedIconButton(
+                        icon = Icons.Rounded.KeyboardArrowDown,
+                        contentDescription = "Next Page",
+                        onClick = onNextPage,
+                        enabled = currentPage < totalPages,
+                        shape = ConnectedBottomShape
+                    )
+                }
             }
 
-            // Divider between Zoom and Page Navigation controls
-            HorizontalDivider(
-                modifier = Modifier
-                    .width(28.dp)
-                    .align(Alignment.CenterHorizontally)
-                    .padding(vertical = 8.dp),
-                thickness = 1.dp,
-                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.25f)
-            )
-
-            // === Page Navigation: Filled Connected Button Group ===
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(ConnectedSpaceBetween),
-                modifier = Modifier.align(Alignment.CenterHorizontally)
+            // Standard M3 FAB as the single prominent action below the calm utility toolbar
+            FloatingActionButton(
+                onClick = onToggleSearch,
+                shape = FloatingActionButtonDefaults.shape,
+                containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                modifier = Modifier.pointerHoverIcon(PointerIcon.Hand)
             ) {
-                // Previous Page (Leading / Top Button)
-                ConnectedIconButton(
-                    icon = Icons.Rounded.KeyboardArrowUp,
-                    contentDescription = "Previous Page",
-                    onClick = onPreviousPage,
-                    enabled = currentPage > 1,
-                    shape = ConnectedTopShape
-                )
-
-                // Page Indicator Button (Toggles the slider pill with springy motion!)
-                FilledIconButton(
-                    onClick = onTogglePageSliderPill,
-                    shape = ConnectedMiddleShape,
-                    colors = if (isPageSliderPillOpen) {
-                        IconButtonDefaults.filledIconButtonColors(
-                            containerColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                            contentColor = MaterialTheme.colorScheme.primaryContainer
-                        )
-                    } else {
-                        IconButtonDefaults.filledIconButtonColors()
-                    },
-                    modifier = Modifier
-                        .size(44.dp)
-                        .pointerHoverIcon(PointerIcon.Hand)
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        Text(
-                            text = "$currentPage",
-                            style = MaterialTheme.typography.labelMedium.copy(
-                                fontWeight = FontWeight.ExtraBold,
-                                lineHeight = 12.sp,
-                                fontSize = 12.sp
-                            ),
-                            textAlign = TextAlign.Center
-                        )
-                        Text(
-                            text = "$totalPages",
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontWeight = FontWeight.Medium,
-                                lineHeight = 10.sp,
-                                fontSize = 9.sp
-                            ),
-                            color = if (isPageSliderPillOpen) {
-                                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f)
-                            } else {
-                                MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f)
-                            },
-                            textAlign = TextAlign.Center
-                        )
-                    }
-                }
-
-                // Next Page (Trailing / Bottom Button)
-                ConnectedIconButton(
-                    icon = Icons.Rounded.KeyboardArrowDown,
-                    contentDescription = "Next Page",
-                    onClick = onNextPage,
-                    enabled = currentPage < totalPages,
-                    shape = ConnectedBottomShape
+                Icon(
+                    imageVector = if (isSearchOpen) Icons.Rounded.Close else Icons.Rounded.Search,
+                    contentDescription = if (isSearchOpen) "Close Search" else "Search in PDF",
+                    modifier = Modifier.size(24.dp)
                 )
             }
         }
@@ -354,6 +331,7 @@ fun ExpressiveVerticalFloatingToolbar(
  * Expressive Search Pop-up Pill featuring live search text input, real-time match counters,
  * previous/next match navigation, and clear/dismiss actions.
  */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun SearchPill(
     searchQuery: String,
@@ -373,36 +351,37 @@ fun SearchPill(
     }
 
     Surface(
-        shape = RoundedCornerShape(26.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.tertiaryContainer,
+        contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
         shadowElevation = 8.dp,
         tonalElevation = 4.dp,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.35f)),
         modifier = modifier
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.padding(start = 14.dp, end = 10.dp, top = 6.dp, bottom = 6.dp)
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.padding(start = 18.dp, end = 12.dp, top = 10.dp, bottom = 10.dp)
         ) {
             // Search Icon
             Icon(
                 imageVector = Icons.Rounded.Search,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(20.dp)
+                tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                modifier = Modifier.size(24.dp)
             )
 
             // Text Input Field with keyboard actions for Enter and Shift+Enter
             Box(
-                modifier = Modifier.width(180.dp),
+                modifier = Modifier.width(230.dp),
                 contentAlignment = Alignment.CenterStart
             ) {
                 if (searchQuery.isEmpty()) {
                     Text(
                         text = "Find in document...",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.65f)
                     )
                 }
 
@@ -410,10 +389,10 @@ fun SearchPill(
                     value = searchQuery,
                     onValueChange = onSearchQueryChange,
                     singleLine = true,
-                    textStyle = MaterialTheme.typography.bodyMedium.copy(
-                        color = MaterialTheme.colorScheme.onSurface
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(
+                        color = MaterialTheme.colorScheme.onTertiaryContainer
                     ),
-                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                    cursorBrush = SolidColor(MaterialTheme.colorScheme.onTertiaryContainer),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                     keyboardActions = KeyboardActions(onSearch = { onNextMatch() }),
                     modifier = Modifier
@@ -441,77 +420,75 @@ fun SearchPill(
                 IconButton(
                     onClick = { onSearchQueryChange("") },
                     modifier = Modifier
-                        .size(28.dp)
+                        .size(34.dp)
                         .pointerHoverIcon(PointerIcon.Hand)
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.Close,
                         contentDescription = "Clear search",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(16.dp)
+                        tint = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.8f),
+                        modifier = Modifier.size(20.dp)
                     )
                 }
             }
 
             // Real-time Match Count & Status Badge
             if (isSearching) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(16.dp),
-                    strokeWidth = 2.dp,
-                    color = MaterialTheme.colorScheme.primary
+                LoadingIndicator(
+                    modifier = Modifier.size(24.dp),
+                    color = MaterialTheme.colorScheme.tertiary
                 )
             } else if (searchQuery.isNotBlank()) {
                 if (totalMatches > 0) {
                     Surface(
-                        color = MaterialTheme.colorScheme.primaryContainer,
-                        shape = RoundedCornerShape(12.dp)
+                        color = MaterialTheme.colorScheme.tertiary,
+                        shape = RoundedCornerShape(14.dp)
                     ) {
                         Text(
                             text = "${currentMatchIndex + 1} of $totalMatches",
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 11.sp
-                            ),
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onTertiary,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                         )
                     }
                 } else {
                     Text(
                         text = "0 matches",
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                        style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.padding(horizontal = 4.dp)
+                        modifier = Modifier.padding(horizontal = 6.dp)
                     )
                 }
             }
 
             // Match Navigation Buttons (Up & Down chevrons)
             if (totalMatches > 0) {
-                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     IconButton(
                         onClick = onPreviousMatch,
                         modifier = Modifier
-                            .size(30.dp)
+                            .size(36.dp)
                             .pointerHoverIcon(PointerIcon.Hand)
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.KeyboardArrowUp,
                             contentDescription = "Previous Match",
-                            modifier = Modifier.size(18.dp)
+                            tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                            modifier = Modifier.size(22.dp)
                         )
                     }
 
                     IconButton(
                         onClick = onNextMatch,
                         modifier = Modifier
-                            .size(30.dp)
+                            .size(36.dp)
                             .pointerHoverIcon(PointerIcon.Hand)
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.KeyboardArrowDown,
                             contentDescription = "Next Match",
-                            modifier = Modifier.size(18.dp)
+                            tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                            modifier = Modifier.size(22.dp)
                         )
                     }
                 }
@@ -521,14 +498,14 @@ fun SearchPill(
             IconButton(
                 onClick = onCloseSearch,
                 modifier = Modifier
-                    .size(30.dp)
+                    .size(36.dp)
                     .pointerHoverIcon(PointerIcon.Hand)
             ) {
                 Icon(
                     imageVector = Icons.Rounded.Close,
                     contentDescription = "Close Search",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(18.dp)
+                    tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                    modifier = Modifier.size(22.dp)
                 )
             }
         }
@@ -577,10 +554,7 @@ private fun PageSliderPill(
             val selectedPage = sliderState.value.roundToInt().coerceIn(1, totalPages)
             Text(
                 text = "Page $selectedPage of $totalPages",
-                style = MaterialTheme.typography.labelLarge.copy(
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp
-                ),
+                style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onPrimaryContainer
             )
 
@@ -615,13 +589,13 @@ private fun ConnectedIconButton(
     enabled: Boolean = true,
     modifier: Modifier = Modifier
 ) {
-    FilledIconButton(
+    FilledTonalIconButton(
         onClick = onClick,
         enabled = enabled,
         shape = shape,
-        colors = IconButtonDefaults.filledIconButtonColors(),
+        colors = IconButtonDefaults.filledTonalIconButtonColors(),
         modifier = modifier
-            .size(44.dp)
+            .size(48.dp)
             .pointerHoverIcon(if (enabled) PointerIcon.Hand else PointerIcon.Default)
     ) {
         Icon(

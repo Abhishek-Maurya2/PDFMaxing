@@ -1,79 +1,128 @@
 package com.droid.pdfmaxing.ui.library
 
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.MenuBook
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
-import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.PictureAsPdf
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
-import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.DockedSearchBar
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExtendedFloatingActionButton
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.LinearWavyProgressIndicator
+import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.ListItemShapes
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.MediumExtendedFloatingActionButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SearchBarDefaults
+import androidx.compose.material3.SegmentedListItem
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.carousel.CarouselItemScope
+import androidx.compose.material3.carousel.HorizontalMultiBrowseCarousel
+import androidx.compose.material3.carousel.rememberCarouselState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.droid.pdfmaxing.data.model.RecentDocument
+import com.droid.pdfmaxing.ui.theme.EmphasizedTypography
 
-@OptIn(ExperimentalMaterial3Api::class)
+enum class DocumentFilter(val label: String) {
+    ALL("All Files"),
+    IN_PROGRESS("In Progress"),
+    COMPLETED("Finished")
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun LibraryScreen(
     onOpenPdfUri: (Uri) -> Unit,
-    onOpenSampleGuide: () -> Unit,
+    onOpenSampleGuide: () -> Unit = {},
+    hasOpenTabs: Boolean = false,
+    onReturnToReader: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
     viewModel: LibraryViewModel = viewModel(),
     modifier: Modifier = Modifier
 ) {
     val recentDocs by viewModel.recentDocuments.collectAsState()
     val uiState by viewModel.uiState.collectAsState()
+    var selectedFilter by remember { mutableStateOf(DocumentFilter.ALL) }
+    val listState = rememberLazyListState()
+    val isFabExpanded by remember {
+        derivedStateOf {
+            listState.firstVisibleItemIndex == 0
+        }
+    }
+
+    if (hasOpenTabs) {
+        BackHandler(onBack = onReturnToReader)
+    }
 
     // SAF OpenDocument launcher for selecting any PDF from system storage
     val filePickerLauncher = rememberLauncherForActivityResult(
@@ -84,117 +133,174 @@ fun LibraryScreen(
         }
     }
 
+    val filteredDocs = remember(recentDocs, uiState.searchQuery, selectedFilter) {
+        recentDocs
+            .filter { doc ->
+                if (uiState.searchQuery.isBlank()) true
+                else doc.title.contains(uiState.searchQuery, ignoreCase = true)
+            }
+            .filter { doc ->
+                when (selectedFilter) {
+                    DocumentFilter.ALL -> true
+                    DocumentFilter.IN_PROGRESS -> doc.progressPercentage in 1..99
+                    DocumentFilter.COMPLETED -> doc.progressPercentage == 100
+                }
+            }
+    }
+
+    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
+
     Scaffold(
-        modifier = modifier.fillMaxSize(),
+        modifier = modifier
+            .fillMaxSize()
+            .nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             CenterAlignedTopAppBar(
+                scrollBehavior = scrollBehavior,
+                navigationIcon = {
+                    if (hasOpenTabs) {
+                        IconButton(onClick = onReturnToReader) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                                contentDescription = "Return to Document"
+                            )
+                        }
+                    }
+                },
                 title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Rounded.PictureAsPdf,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(28.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            modifier = Modifier.size(38.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Rounded.PictureAsPdf,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                        }
                         Text(
                             text = "PDFMaxing",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold
+                            style = EmphasizedTypography.titleLarge
                         )
                     }
                 },
                 actions = {
-                    FilledTonalIconButton(
-                        onClick = { viewModel.toggleSearching() },
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier
-                            .size(38.dp)
-                            .padding(end = 4.dp)
+                    IconButton(
+                        onClick = onOpenSettings,
+                        modifier = Modifier.pointerHoverIcon(PointerIcon.Hand)
                     ) {
                         Icon(
-                            imageVector = if (uiState.isSearching) Icons.Rounded.Close else Icons.Rounded.Search,
-                            contentDescription = if (uiState.isSearching) "Close Search" else "Search Documents",
-                            modifier = Modifier.size(20.dp)
+                            imageVector = Icons.Rounded.Settings,
+                            contentDescription = "Settings"
                         )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer
                 )
             )
         },
         floatingActionButton = {
-            ExtendedFloatingActionButton(
+            MediumExtendedFloatingActionButton(
                 onClick = { filePickerLauncher.launch(arrayOf("application/pdf")) },
-                icon = { Icon(Icons.Rounded.FolderOpen, contentDescription = null) },
-                text = { Text("Open PDF", fontWeight = FontWeight.Bold) },
-                shape = RoundedCornerShape(20.dp),
+                expanded = isFabExpanded,
+                icon = {
+                    Icon(
+                        imageVector = Icons.Rounded.FolderOpen,
+                        contentDescription = "Open PDF",
+                        modifier = Modifier.size(24.dp)
+                    )
+                },
+                text = {
+                    Text(
+                        text = "Open PDF",
+                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold)
+                    )
+                },
+                shape = FloatingActionButtonDefaults.mediumExtendedFabShape,
                 containerColor = MaterialTheme.colorScheme.primaryContainer,
                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                 modifier = Modifier.pointerHoverIcon(PointerIcon.Hand)
             )
         }
     ) { innerPadding ->
-        Column(
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
+                .padding(innerPadding),
+            contentAlignment = Alignment.TopCenter
         ) {
-            // Search field when toggled
-            AnimatedVisibility(
-                visible = uiState.isSearching,
-                enter = fadeIn(),
-                exit = fadeOut()
+            val screenMaxWidth = maxWidth
+            val isCompactScreen = screenMaxWidth < 600.dp
+
+            // Adaptive horizontal margin and max content width for large/wide laptop screens (reduced margins by 35%)
+            val maxContentWidth = when {
+                maxWidth >= 1400.dp -> 1300.dp
+                maxWidth >= 1000.dp -> 1080.dp
+                maxWidth >= 800.dp -> 920.dp
+                else -> maxWidth
+            }
+
+            val horizontalMargin = when {
+                maxWidth >= 1200.dp -> 26.dp
+                maxWidth >= 840.dp -> 21.dp
+                maxWidth >= 600.dp -> 16.dp
+                else -> 16.dp
+            }
+
+            Column(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .widthIn(max = maxContentWidth)
+                    .fillMaxWidth()
+                    .padding(horizontal = horizontalMargin)
             ) {
-                OutlinedTextField(
-                    value = uiState.searchQuery,
-                    onValueChange = { viewModel.setSearchQuery(it) },
-                    placeholder = { Text("Search recents by title...") },
-                    singleLine = true,
-                    leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
-                    trailingIcon = {
-                        if (uiState.searchQuery.isNotEmpty()) {
-                            FilledTonalIconButton(
-                                onClick = { viewModel.setSearchQuery("") },
-                                shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier.size(28.dp)
-                            ) {
-                                Icon(Icons.Rounded.Close, contentDescription = "Clear search", modifier = Modifier.size(16.dp))
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(top = 8.dp, bottom = 88.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                // Material 3 Expressive Filter Chips in pure native design without custom border radius or color overrides
+                if (recentDocs.isNotEmpty()) {
+                    item {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.padding(vertical = 2.dp)
+                        ) {
+                            DocumentFilter.entries.forEach { filter ->
+                                val isSelected = selectedFilter == filter
+                                FilterChip(
+                                    selected = isSelected,
+                                    onClick = { selectedFilter = filter },
+                                    label = {
+                                        Text(text = filter.label)
+                                    },
+                                    leadingIcon = if (isSelected) {
+                                        {
+                                            Icon(
+                                                imageVector = Icons.Rounded.Check,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(FilterChipDefaults.IconSize)
+                                            )
+                                        }
+                                    } else null
+                                )
                             }
                         }
-                    },
-                    shape = RoundedCornerShape(24.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainer
-                    ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp)
-                )
-            }
-
-            val filteredDocs = if (uiState.searchQuery.isBlank()) {
-                recentDocs
-            } else {
-                recentDocs.filter { it.title.contains(uiState.searchQuery, ignoreCase = true) }
-            }
-
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                // Section 1: Hero Welcome & Quick Feature Guide Card
-                item {
-                    HeroGuideCard(
-                        onOpenSampleGuide = onOpenSampleGuide,
-                        onOpenPicker = { filePickerLauncher.launch(arrayOf("application/pdf")) }
-                    )
+                    }
                 }
 
-                // Section 2: Recent Documents Carousel (if recents exist)
+                // Section 1: Recent Documents Carousel (HorizontalUncontainedCarousel)
                 if (filteredDocs.isNotEmpty()) {
                     item {
                         Column {
@@ -205,22 +311,36 @@ fun LibraryScreen(
                             ) {
                                 Text(
                                     text = "Jump Back In",
-                                    style = MaterialTheme.typography.titleMedium,
+                                    style = MaterialTheme.typography.titleLarge,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
-                                Text(
-                                    text = "${filteredDocs.size} files",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    fontWeight = FontWeight.SemiBold
-                                )
+                                Surface(
+                                    shape = CircleShape,
+                                    color = MaterialTheme.colorScheme.primaryContainer
+                                ) {
+                                    Text(
+                                        text = "${filteredDocs.size} files",
+                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                    )
+                                }
                             }
-                            Spacer(modifier = Modifier.height(10.dp))
-                            LazyRow(
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                items(filteredDocs) { doc ->
+
+                            Spacer(modifier = Modifier.height(14.dp))
+
+                            val carouselState = rememberCarouselState { filteredDocs.size }
+                            HorizontalMultiBrowseCarousel(
+                                state = carouselState,
+                                preferredItemWidth = 260.dp,
+                                itemSpacing = 14.dp,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(188.dp)
+                            ) { pageIndex ->
+                                val doc = filteredDocs.getOrNull(pageIndex)
+                                if (doc != null) {
                                     RecentCarouselCard(
                                         document = doc,
                                         onClick = {
@@ -235,194 +355,388 @@ fun LibraryScreen(
                             }
                         }
                     }
+                }
 
-                    // Section 3: All Recent Documents List
+                // Section 2: Recent Files Header with Search Bar on the Right
+                if (recentDocs.isNotEmpty()) {
                     item {
-                        Text(
-                            text = "Recent Files",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.padding(top = 8.dp)
-                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 10.dp, bottom = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Recent Files",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+
+                            if (isCompactScreen) {
+                                IconButton(
+                                    onClick = { viewModel.toggleSearching() },
+                                    modifier = Modifier.pointerHoverIcon(PointerIcon.Hand)
+                                ) {
+                                    Icon(
+                                        imageVector = if (uiState.isSearching) Icons.Rounded.Close else Icons.Rounded.Search,
+                                        contentDescription = if (uiState.isSearching) "Close Search" else "Search Documents",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            } else {
+                                DockedSearchBar(
+                                    inputField = {
+                                        SearchBarDefaults.InputField(
+                                            query = uiState.searchQuery,
+                                            onQueryChange = { viewModel.setSearchQuery(it) },
+                                            onSearch = {},
+                                            expanded = false,
+                                            onExpandedChange = {},
+                                            placeholder = {
+                                                Text(
+                                                    text = "Search files...",
+                                                    style = MaterialTheme.typography.bodyMedium
+                                                )
+                                            },
+                                            leadingIcon = {
+                                                Icon(
+                                                    imageVector = Icons.Rounded.Search,
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(20.dp)
+                                                )
+                                            },
+                                            trailingIcon = if (uiState.searchQuery.isNotEmpty()) {
+                                                {
+                                                    IconButton(
+                                                        onClick = { viewModel.setSearchQuery("") },
+                                                        modifier = Modifier.size(24.dp)
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = Icons.Rounded.Close,
+                                                            contentDescription = "Clear",
+                                                            modifier = Modifier.size(16.dp)
+                                                        )
+                                                    }
+                                                }
+                                            } else null
+                                        )
+                                    },
+                                    expanded = false,
+                                    onExpandedChange = {},
+                                    modifier = Modifier.widthIn(min = 220.dp, max = 320.dp),
+                                    content = {}
+                                )
+                            }
+                        }
                     }
 
-                    items(filteredDocs) { doc ->
-                        RecentFileListItem(
-                            document = doc,
-                            onClick = {
-                                if (doc.isAsset) {
-                                    onOpenSampleGuide()
-                                } else {
-                                    onOpenPdfUri(Uri.parse(doc.uriString))
-                                }
-                            },
-                            onDelete = { viewModel.removeDocument(doc.uriString) }
-                        )
+                    // On compact screen: show search box when search icon is clicked
+                    if (isCompactScreen) {
+                        item {
+                            val effectsSpec = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
+                            val spatialSizeSpec = MaterialTheme.motionScheme.defaultSpatialSpec<IntSize>()
+                            AnimatedVisibility(
+                                visible = uiState.isSearching,
+                                enter = fadeIn(animationSpec = effectsSpec) + expandVertically(animationSpec = spatialSizeSpec),
+                                exit = fadeOut(animationSpec = effectsSpec) + shrinkVertically(animationSpec = spatialSizeSpec)
+                            ) {
+                                DockedSearchBar(
+                                    inputField = {
+                                        SearchBarDefaults.InputField(
+                                            query = uiState.searchQuery,
+                                            onQueryChange = { viewModel.setSearchQuery(it) },
+                                            onSearch = {},
+                                            expanded = false,
+                                            onExpandedChange = {},
+                                            placeholder = {
+                                                Text(
+                                                    text = "Search files...",
+                                                    style = MaterialTheme.typography.bodyMedium
+                                                )
+                                            },
+                                            leadingIcon = {
+                                                Icon(
+                                                    imageVector = Icons.Rounded.Search,
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(20.dp)
+                                                )
+                                            },
+                                            trailingIcon = if (uiState.searchQuery.isNotEmpty()) {
+                                                {
+                                                    IconButton(
+                                                        onClick = { viewModel.setSearchQuery("") },
+                                                        modifier = Modifier.size(24.dp)
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = Icons.Rounded.Close,
+                                                            contentDescription = "Clear",
+                                                            modifier = Modifier.size(16.dp)
+                                                        )
+                                                    }
+                                                }
+                                            } else null
+                                        )
+                                    },
+                                    expanded = false,
+                                    onExpandedChange = {},
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(bottom = 6.dp),
+                                    content = {}
+                                )
+                            }
+                        }
                     }
-                } else if (recentDocs.isEmpty()) {
+
+                    if (filteredDocs.isNotEmpty()) {
+                        if (isCompactScreen) {
+                            item {
+                                Column(
+                                    verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap)
+                                ) {
+                                    filteredDocs.forEachIndexed { index, doc ->
+                                        val shapes = ListItemDefaults.segmentedShapes(
+                                            index = index,
+                                            count = filteredDocs.size
+                                        )
+                                        RecentFileSegmentedListItem(
+                                            document = doc,
+                                            shapes = shapes,
+                                            onClick = {
+                                                if (doc.isAsset) {
+                                                    onOpenSampleGuide()
+                                                } else {
+                                                    onOpenPdfUri(Uri.parse(doc.uriString))
+                                                }
+                                            },
+                                            onDelete = { viewModel.removeDocument(doc.uriString) }
+                                        )
+                                    }
+                                }
+                            }
+                        } else {
+                            // Medium (2 columns) & Expanded/Large (3 columns) adaptive grid
+                            val columnCount = if (screenMaxWidth >= 840.dp) 3 else 2
+                            val rows = filteredDocs.chunked(columnCount)
+                            items(
+                                count = rows.size,
+                                key = { rowIdx -> "grid_row_${rowIdx}_${rows[rowIdx].first().uriString}" }
+                            ) { rowIdx ->
+                                val rowDocs = rows[rowIdx]
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .animateItem(
+                                            fadeInSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
+                                            fadeOutSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
+                                            placementSpec = MaterialTheme.motionScheme.defaultSpatialSpec()
+                                        ),
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    rowDocs.forEach { doc ->
+                                        RecentFileGridCard(
+                                            document = doc,
+                                            onClick = {
+                                                if (doc.isAsset) {
+                                                    onOpenSampleGuide()
+                                                } else {
+                                                    onOpenPdfUri(Uri.parse(doc.uriString))
+                                                }
+                                            },
+                                            onDelete = { viewModel.removeDocument(doc.uriString) },
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                    }
+                                    repeat(columnCount - rowDocs.size) {
+                                        Spacer(modifier = Modifier.weight(1f))
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        // Search or filter produced 0 results
+                        item {
+                            SearchEmptyStateView(query = uiState.searchQuery)
+                        }
+                    }
+                } else {
                     // Empty state when user hasn't opened any files yet
                     item {
                         EmptyLibraryView(
-                            onOpenFile = { filePickerLauncher.launch(arrayOf("application/pdf")) },
-                            onOpenGuide = onOpenSampleGuide
+                            onOpenFile = { filePickerLauncher.launch(arrayOf("application/pdf")) }
                         )
                     }
-                } else {
-                    // Search produced 0 results
-                    item {
-                        SearchEmptyStateView(query = uiState.searchQuery)
-                    }
                 }
             }
         }
     }
 }
-
-@Composable
-fun HeroGuideCard(
-    onOpenSampleGuide: () -> Unit,
-    onOpenPicker: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    ElevatedCard(
-        modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.elevatedCardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer
-        )
-    ) {
-        Column(modifier = Modifier.padding(20.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(44.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primary),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Rounded.MenuBook,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onPrimary,
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
-                Spacer(modifier = Modifier.width(14.dp))
-                Column {
-                    Text(
-                        text = "PDFMaxing Quick Guide",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                    Text(
-                        text = "Explore two-page spread, dark mode, tabs & zoom",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                FilledTonalButton(
-                    onClick = onOpenSampleGuide,
-                    shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier.pointerHoverIcon(PointerIcon.Hand)
-                ) {
-                    Text("Read Guide", fontWeight = FontWeight.SemiBold)
-                }
-                FilledTonalButton(
-                    onClick = onOpenPicker,
-                    shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier.pointerHoverIcon(PointerIcon.Hand)
-                ) {
-                    Icon(Icons.Rounded.FolderOpen, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Browse Files", fontWeight = FontWeight.SemiBold)
-                }
-            }
-        }
-    }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-fun RecentCarouselCard(
+fun CarouselItemScope.RecentCarouselCard(
     document: RecentDocument,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Card(
         modifier = modifier
-            .width(180.dp)
+            .fillMaxHeight()
+            .maskClip(MaterialTheme.shapes.extraLarge)
             .clickable { onClick() }
             .pointerHoverIcon(PointerIcon.Hand),
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        shape = MaterialTheme.shapes.extraLarge,
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+        ),
+        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp)
     ) {
-        Column(modifier = Modifier.padding(14.dp)) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(18.dp),
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    imageVector = Icons.Rounded.PictureAsPdf,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(28.dp)
-                )
                 Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(MaterialTheme.colorScheme.secondaryContainer)
-                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                        .size(42.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.primaryContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.PictureAsPdf,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+
+                Surface(
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    shape = RoundedCornerShape(8.dp)
                 ) {
                     Text(
                         text = "${document.pageCount} pgs",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = document.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
 
-            Text(
-                text = document.title,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Bold,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
+                Spacer(modifier = Modifier.height(10.dp))
 
-            Spacer(modifier = Modifier.height(8.dp))
+                LinearWavyProgressIndicator(
+                    progress = { document.progressPercentage / 100f },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(8.dp)
+                )
 
-            LinearProgressIndicator(
-                progress = { document.progressPercentage / 100f },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(4.dp)
-                    .clip(RoundedCornerShape(2.dp))
-            )
+                Spacer(modifier = Modifier.height(6.dp))
 
-            Spacer(modifier = Modifier.height(6.dp))
-
-            Text(
-                text = "Page ${document.lastReadPage} (${document.progressPercentage}%)",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+                val zoomPercent = (document.zoomLevel * 100).toInt()
+                Text(
+                    text = "Page ${document.lastReadPage} / ${document.pageCount} (${document.progressPercentage}%) • $zoomPercent%",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
     }
 }
 
+/**
+ * Material 3 Expressive Segmented Filled List Item for recent PDF files.
+ * Uses SegmentedListItem with ListItemDefaults.segmentedShapes and ListItemDefaults.segmentedColors.
+ * Reference: https://developer.android.com/reference/kotlin/androidx/compose/material3/SegmentedListItem.composable
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-fun RecentFileListItem(
+fun RecentFileSegmentedListItem(
+    document: RecentDocument,
+    shapes: ListItemShapes,
+    onClick: () -> Unit,
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    SegmentedListItem(
+        onClick = onClick,
+        shapes = shapes,
+        colors = ListItemDefaults.segmentedColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+        ),
+        modifier = modifier.pointerHoverIcon(PointerIcon.Hand),
+        leadingContent = {
+            Box(
+                modifier = Modifier
+                    .size(46.dp)
+                    .clip(RoundedCornerShape(30.dp))
+                    .background(MaterialTheme.colorScheme.primaryContainer),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.PictureAsPdf,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+        },
+        trailingContent = {
+            IconButton(
+                onClick = onDelete,
+                modifier = Modifier.pointerHoverIcon(PointerIcon.Hand)
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Delete,
+                    contentDescription = "Remove from recents",
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+        },
+        supportingContent = {
+            Text(
+                text = "${document.pageCount} pages • ${document.formattedFileSize} • Page ${document.lastReadPage}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        },
+        content = {
+            Text(
+                text = document.title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    )
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+fun RecentFileGridCard(
     document: RecentDocument,
     onClick: () -> Unit,
     onDelete: () -> Unit,
@@ -430,153 +744,217 @@ fun RecentFileListItem(
 ) {
     Card(
         modifier = modifier
-            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.large)
             .clickable { onClick() }
             .pointerHoverIcon(PointerIcon.Hand),
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+        )
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Box(
-                modifier = Modifier
-                    .size(42.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(MaterialTheme.colorScheme.primaryContainer),
-                contentAlignment = Alignment.Center
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    imageVector = Icons.Rounded.Description,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                    modifier = Modifier.size(24.dp)
-                )
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(MaterialTheme.shapes.medium)
+                        .background(MaterialTheme.colorScheme.primaryContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.PictureAsPdf,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                IconButton(
+                    onClick = onDelete,
+                    modifier = Modifier
+                        .size(36.dp)
+                        .pointerHoverIcon(PointerIcon.Hand)
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Delete,
+                        contentDescription = "Remove from recents",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
             }
 
-            Spacer(modifier = Modifier.width(12.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
                     text = document.title,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Bold,
+                    style = EmphasizedTypography.titleMedium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    text = "${document.pageCount} pages • Last read page ${document.lastReadPage} • ${document.formattedFileSize}",
+                    text = "${document.pageCount} pages • ${document.formattedFileSize} • Page ${document.lastReadPage}",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
 
-            FilledTonalIconButton(
-                onClick = onDelete,
-                shape = RoundedCornerShape(10.dp),
-                modifier = Modifier.size(34.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Delete,
-                    contentDescription = "Remove from recents",
-                    modifier = Modifier.size(18.dp)
-                )
-            }
+            LinearWavyProgressIndicator(
+                progress = { document.progressPercentage / 100f },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(6.dp)
+            )
         }
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun EmptyLibraryView(
     onOpenFile: () -> Unit,
-    onOpenGuide: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(vertical = 32.dp, horizontal = 16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { visible = true }
+
+    AnimatedVisibility(
+        visible = visible,
+        enter = scaleIn(
+            initialScale = 0.92f,
+            animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec()
+        ) + fadeIn(animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec())
     ) {
-        Box(
-            modifier = Modifier
-                .size(72.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.surfaceContainerHigh),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.PictureAsPdf,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(36.dp)
+        Card(
+            modifier = modifier
+                .fillMaxWidth()
+                .padding(vertical = 24.dp),
+            shape = MaterialTheme.shapes.extraLarge,
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerLow
             )
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Text(
-            text = "Your PDF Library is Empty",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-
-        Spacer(modifier = Modifier.height(6.dp))
-
-        Text(
-            text = "Open any PDF from your device storage, or start with the interactive Quick Guide to try two-page spread, dark mode, and zoom controls.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 24.dp)
-        )
-
-        Spacer(modifier = Modifier.height(20.dp))
-
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            FilledTonalButton(
-                onClick = onOpenFile,
-                shape = RoundedCornerShape(14.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(36.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Icon(Icons.Rounded.FolderOpen, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("Select PDF")
-            }
+                Box(
+                    modifier = Modifier
+                        .size(92.dp)
+                        .clip(MaterialTheme.shapes.extraLarge)
+                        .background(MaterialTheme.colorScheme.primaryContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.PictureAsPdf,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(44.dp)
+                    )
+                }
 
-            FilledTonalButton(
-                onClick = onOpenGuide,
-                shape = RoundedCornerShape(14.dp)
-            ) {
-                Text("Open Quick Guide")
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Text(
+                    text = "No Documents Yet",
+                    style = EmphasizedTypography.headlineSmall,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Text(
+                    text = "Select any PDF from your device storage to begin reading with continuous fluid scrolling, dark mode inversion, and high-performance zoom.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
+
+                Spacer(modifier = Modifier.height(28.dp))
+
+                MediumExtendedFloatingActionButton(
+                    onClick = onOpenFile,
+                    expanded = true,
+                    icon = {
+                        Icon(
+                            imageVector = Icons.Rounded.FolderOpen,
+                            contentDescription = null,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    },
+                    text = {
+                        Text(
+                            text = "Select PDF File",
+                            style = EmphasizedTypography.labelLarge
+                        )
+                    },
+                    shape = FloatingActionButtonDefaults.mediumExtendedFabShape,
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.pointerHoverIcon(PointerIcon.Hand)
+                )
             }
         }
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun SearchEmptyStateView(query: String, modifier: Modifier = Modifier) {
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(vertical = 40.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { visible = true }
+
+    AnimatedVisibility(
+        visible = visible,
+        enter = scaleIn(
+            initialScale = 0.9f,
+            animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec()
+        ) + fadeIn(animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec())
     ) {
-        Icon(
-            imageVector = Icons.Rounded.Search,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-            modifier = Modifier.size(48.dp)
-        )
-        Spacer(modifier = Modifier.height(12.dp))
-        Text(
-            text = "No documents match \"$query\"",
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        Column(
+            modifier = modifier
+                .fillMaxWidth()
+                .padding(vertical = 48.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Surface(
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                modifier = Modifier.size(72.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Rounded.Search,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(34.dp)
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = if (query.isBlank()) "No matching documents" else "No results for \"$query\"",
+                style = EmphasizedTypography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Try adjusting your search or filter",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }

@@ -1,5 +1,7 @@
 package com.droid.pdfmaxing.data.model
 
+import com.droid.pdfmaxing.ui.reader.PdfViewLayoutMode
+import com.droid.pdfmaxing.ui.theme.PdfColorMode
 import java.util.Locale
 
 /**
@@ -14,7 +16,10 @@ data class RecentDocument(
     val lastOpenedTimestamp: Long = System.currentTimeMillis(),
     val fileSizeBytes: Long = 0L,
     val isAsset: Boolean = false,
-    val assetPath: String? = null
+    val assetPath: String? = null,
+    val zoomLevel: Float = 1.0f,
+    val colorMode: PdfColorMode = PdfColorMode.NORMAL,
+    val layoutMode: PdfViewLayoutMode = PdfViewLayoutMode.FIT_100
 ) {
     /**
      * Reading progress percentage from 0 to 100.

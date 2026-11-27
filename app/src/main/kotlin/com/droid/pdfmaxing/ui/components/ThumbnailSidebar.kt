@@ -1,6 +1,11 @@
 package com.droid.pdfmaxing.ui.components
 
 import android.graphics.Bitmap
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -29,9 +34,11 @@ import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.ViewModule
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SegmentedButton
@@ -62,6 +69,7 @@ import java.util.Locale
 
 @Composable
 fun ThumbnailSidebar(
+    documentId: String,
     activeTab: SidebarTab,
     totalPages: Int,
     currentPage: Int,
@@ -100,15 +108,13 @@ fun ThumbnailSidebar(
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
-                FilledTonalIconButton(
-                    onClick = onCloseSidebar,
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.size(34.dp)
+                IconButton(
+                    onClick = onCloseSidebar
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.Close,
                         contentDescription = "Close Sidebar",
-                        modifier = Modifier.size(18.dp)
+                        modifier = Modifier.size(20.dp)
                     )
                 }
             }
@@ -126,6 +132,12 @@ fun ThumbnailSidebar(
                         shape = SegmentedButtonDefaults.itemShape(
                             index = index,
                             count = SidebarTab.entries.size
+                        ),
+                        colors = SegmentedButtonDefaults.colors(
+                            activeContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                            activeContentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                            inactiveContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f),
+                            inactiveContentColor = MaterialTheme.colorScheme.onSurfaceVariant
                         ),
                         icon = {
                             val icon = when (tab) {
@@ -149,15 +161,25 @@ fun ThumbnailSidebar(
                 }
             }
 
-            // Tab Content
-            Box(
+            // Tab Content with M3E AnimatedContent
+            val tabEffectsSpec = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
+            val tabSpatialSpec = MaterialTheme.motionScheme.defaultSpatialSpec<androidx.compose.ui.unit.IntOffset>()
+            AnimatedContent(
+                targetState = activeTab,
+                transitionSpec = {
+                    (fadeIn(animationSpec = tabEffectsSpec) +
+                        slideInHorizontally(animationSpec = tabSpatialSpec) { it / 6 })
+                        .togetherWith(fadeOut(animationSpec = tabEffectsSpec))
+                },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f)
-            ) {
-                when (activeTab) {
+                    .weight(1f),
+                label = "SidebarTabTransition"
+            ) { tab ->
+                when (tab) {
                     SidebarTab.THUMBNAILS -> {
                         ThumbnailGridView(
+                            documentId = documentId,
                             totalPages = totalPages,
                             currentPage = currentPage,
                             colorMode = colorMode,
@@ -186,6 +208,7 @@ fun ThumbnailSidebar(
 
 @Composable
 fun ThumbnailGridView(
+    documentId: String,
     totalPages: Int,
     currentPage: Int,
     colorMode: PdfColorMode,
@@ -199,11 +222,15 @@ fun ThumbnailGridView(
         verticalArrangement = Arrangement.spacedBy(10.dp),
         modifier = modifier.fillMaxSize()
     ) {
-        items(totalPages) { index ->
+        items(
+            count = totalPages,
+            key = { index -> "${documentId}_thumb_$index" }
+        ) { index ->
             val pageNumber = index + 1
             val isCurrent = pageNumber == currentPage
 
             ThumbnailItem(
+                documentId = documentId,
                 pageIndex = index,
                 pageNumber = pageNumber,
                 isCurrent = isCurrent,
@@ -215,8 +242,10 @@ fun ThumbnailGridView(
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun ThumbnailItem(
+    documentId: String,
     pageIndex: Int,
     pageNumber: Int,
     isCurrent: Boolean,
@@ -224,10 +253,10 @@ fun ThumbnailItem(
     loadThumbnail: suspend (pageIndex: Int) -> Bitmap?,
     onClick: () -> Unit
 ) {
-    var thumbnailBitmap by remember(pageIndex) { mutableStateOf<Bitmap?>(null) }
-    var isLoading by remember(pageIndex) { mutableStateOf(true) }
+    var thumbnailBitmap by remember(documentId, pageIndex) { mutableStateOf<Bitmap?>(null) }
+    var isLoading by remember(documentId, pageIndex) { mutableStateOf(true) }
 
-    LaunchedEffect(pageIndex) {
+    LaunchedEffect(documentId, pageIndex) {
         isLoading = true
         thumbnailBitmap = loadThumbnail(pageIndex)
         isLoading = false
@@ -273,9 +302,8 @@ fun ThumbnailItem(
                         modifier = Modifier.fillMaxSize()
                     )
                 } else if (isLoading) {
-                    CircularProgressIndicator(
-                        strokeWidth = 2.dp,
-                        modifier = Modifier.size(20.dp)
+                    LoadingIndicator(
+                        modifier = Modifier.size(28.dp)
                     )
                 }
             }

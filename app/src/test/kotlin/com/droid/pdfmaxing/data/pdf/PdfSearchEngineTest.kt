@@ -81,6 +81,15 @@ class PdfSearchEngineTest {
     }
 
     @Test
+    fun testSearchHandlesWhitespaceAroundQuery() = runBlocking {
+        val bytes = getSampleGuideBytes()
+        val trimmedMatches = PdfSearchEngine.searchInPdfBytes(bytes, "Welcome")
+        val paddedMatches = PdfSearchEngine.searchInPdfBytes(bytes, "   Welcome   ")
+        assertEquals(trimmedMatches.size, paddedMatches.size)
+        assertTrue(paddedMatches.isNotEmpty())
+    }
+
+    @Test
     fun testMatchCyclingLogic() {
         val matches = listOf(
             PdfSearchMatch(pageIndex = 0, matchIndexInPage = 0),
@@ -104,5 +113,33 @@ class PdfSearchEngineTest {
         assertEquals(1, currentIndex)
         currentIndex = if (currentIndex - 1 < 0) matches.size - 1 else currentIndex - 1
         assertEquals(0, currentIndex)
+    }
+
+    @Test
+    fun testSearchDoesNotConfuseObjectIdPrefix() = runBlocking {
+        // Object 11 appears before Object 1; searching for text in Object 1's stream
+        // must match "1 0 obj" rather than the "1 " substring in "11 0 obj" or "/Count 1 ".
+        val syntheticPdf = """
+            %PDF-1.4
+            11 0 obj
+            << /Type /Catalog /Count 1 >>
+            stream
+            BT (WrongStreamContent) Tj ET
+            endstream
+            endobj
+            2 0 obj
+            << /Type /Page /Contents 1 0 R >>
+            endobj
+            1 0 obj
+            << /Length 28 >>
+            stream
+            BT (ExactObjectMatch) Tj ET
+            endstream
+            endobj
+        """.trimIndent().toByteArray(Charsets.ISO_8859_1)
+
+        val matches = PdfSearchEngine.searchInPdfBytes(syntheticPdf, "ExactObjectMatch")
+        assertEquals(1, matches.size)
+        assertEquals(0, matches[0].pageIndex)
     }
 }

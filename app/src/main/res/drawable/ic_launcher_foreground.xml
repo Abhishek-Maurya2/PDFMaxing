@@ -4,40 +4,56 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Document shadow -->
+
+    <!-- Soft ambient shadow safely inside 66dp adaptive safe zone -->
     <path
-        android:fillColor="#33000000"
-        android:pathData="M34,26 L64,26 L78,40 L78,86 C78,88.2 76.2,90 74,90 L34,90 C31.8,90 30,88.2 30,86 L30,30 C30,27.8 31.8,26 34,26 Z" />
-    <!-- White paper sheet with rounded corners and fold -->
+        android:fillColor="#38000000"
+        android:pathData="M37,28 L63,28 L76,41 L76,78 C76,80.8 73.8,83 71,83 L37,83 C34.2,83 32,80.8 32,78 L32,33 C32,30.2 34.2,28 37,28 Z" />
+
+    <!-- Crisp white document sheet -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M32,24 L62,24 L76,38 L76,84 C76,86.2 74.2,88 72,88 L32,88 C29.8,88 28,86.2 28,84 L28,28 C28,25.8 29.8,24 32,24 Z" />
+        android:pathData="M35,26 L61,26 L74,39 L74,76 C74,78.8 71.8,81 69,81 L35,81 C32.2,81 30,78.8 30,76 L30,31 C30,28.2 32.2,26 35,26 Z" />
+
+    <!-- Folded top-right corner flap shadow -->
+    <path
+        android:fillColor="#26000000"
+        android:pathData="M61,39 L74,39 L74,41 L63,41 C61.9,41 61,40.1 61,39 Z" />
+
     <!-- Folded top-right corner flap -->
     <path
-        android:fillColor="#CFD8DC"
-        android:pathData="M62,24 L76,38 L64,38 C62.9,38 62,37.1 62,36 Z" />
-    <!-- Vibrant PDF Red Expressive Badge/Ribbon -->
+        android:fillColor="#FFDAD6"
+        android:pathData="M61,26 L74,39 L63,39 C61.9,39 61,38.1 61,37 Z" />
+
+    <!-- Expressive floating PDF pill badge -->
     <path
-        android:fillColor="#D32F2F"
-        android:pathData="M28,46 L76,46 L76,64 L28,64 Z" />
-    <!-- "PDF" Stylized Text cut-out / lines in the red badge -->
+        android:fillColor="#B71C1C"
+        android:pathData="M27,45 L67,45 C69.2,45 71,46.8 71,49 L71,59 C71,61.2 69.2,63 67,63 L27,63 C24.8,63 23,61.2 23,59 L23,49 C23,46.8 24.8,45 27,45 Z" />
+
+    <!-- Crisp "PDF" lettering inside pill -->
     <!-- P -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M36,50 L42,50 C43.1,50 44,50.9 44,52 C44,53.1 43.1,54 42,54 L38.5,54 L38.5,60 L36,60 Z M38.5,52 L38.5,52.5 L41.5,52.5 C41.8,52.5 42,52.3 42,52 C42,51.7 41.8,51.5 41.5,51.5 L38.5,51.5 Z" />
+        android:pathData="M31,49 L36,49 C37.9,49 39.2,50.1 39.2,52 C39.2,53.9 37.9,55 36,55 L33.4,55 L33.4,59 L31,59 Z M33.4,51 L33.4,53.1 L35.6,53.1 C36.4,53.1 36.8,52.7 36.8,52 C36.8,51.3 36.4,51 35.6,51 Z" />
     <!-- D -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M46,50 L51,50 C53.2,50 55,51.8 55,54 L55,56 C55,58.2 53.2,60 51,60 L46,60 Z M48.5,52 L48.5,58 L50.5,58 C51.9,58 52.5,56.9 52.5,55.5 L52.5,54.5 C52.5,53.1 51.9,52 50.5,52 Z" />
+        android:pathData="M41.5,49 L46,49 C48.8,49 50.5,50.8 50.5,54 C50.5,57.2 48.8,59 46,59 L41.5,59 Z M43.9,51.1 L43.9,56.9 L45.8,56.9 C47.3,56.9 48.1,55.9 48.1,54 C48.1,52.1 47.3,51.1 45.8,51.1 Z" />
     <!-- F -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M57,50 L64,50 L64,52 L59.5,52 L59.5,54.5 L63.5,54.5 L63.5,56.5 L59.5,56.5 L59.5,60 L57,60 Z" />
-    <!-- Document lines below ribbon -->
+        android:pathData="M52.8,49 L60.2,49 L60.2,51.1 L55.2,51.1 L55.2,53.2 L59.4,53.2 L59.4,55.2 L55.2,55.2 L55.2,59 L52.8,59 Z" />
+
+    <!-- Expressive maximize spark/arrow accent in top-left of sheet -->
     <path
-        android:fillColor="#B0BEC5"
-        android:pathData="M36,70 L68,70 C68.6,70 69,70.4 69,71 C69,71.6 68.6,72 68,72 L36,72 C35.4,72 35,71.6 35,71 C35,70.4 35.4,70 36,70 Z" />
+        android:fillColor="#FF5252"
+        android:pathData="M36,33 L44,33 L44,35.4 L38.4,35.4 L38.4,41 L36,41 Z" />
+
+    <!-- Clean document text lines below badge -->
     <path
-        android:fillColor="#B0BEC5"
-        android:pathData="M36,76 L60,76 C60.6,76 61,76.4 61,77 C61,77.6 60.6,78 60,78 L36,78 C35.4,78 35,77.6 35,77 C35,76.4 35.4,76 36,76 Z" />
+        android:fillColor="#CFD8DC"
+        android:pathData="M36.5,68 L67.5,68 C68.3,68 69,68.7 69,69.5 C69,70.3 68.3,71 67.5,71 L36.5,71 C35.7,71 35,70.3 35,69.5 C35,68.7 35.7,68 36.5,68 Z" />
+    <path
+        android:fillColor="#E0E0E0"
+        android:pathData="M36.5,73.5 L59.5,73.5 C60.3,73.5 61,74.2 61,75 C61,75.8 60.3,76.5 59.5,76.5 L36.5,76.5 C35.7,76.5 35,75.8 35,75 C35,74.2 35.7,73.5 36.5,73.5 Z" />
 </vector>

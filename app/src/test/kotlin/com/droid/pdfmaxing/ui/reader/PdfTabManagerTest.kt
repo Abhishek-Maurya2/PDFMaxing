@@ -59,4 +59,60 @@ class PdfTabManagerTest {
         assertEquals(2.0f, updated.zoomLevel, 0.001f)
         assertEquals(PdfColorMode.INVERTED, updated.colorMode)
     }
+
+    @Test
+    fun testTabCreationWithRememberedState() {
+        val rememberedPage = 7
+        val rememberedZoom = 1.75f
+        val rememberedTheme = PdfColorMode.NIGHT_SLATE
+
+        val tab = PdfTab(
+            id = "tab-saved",
+            uri = null,
+            title = "SavedBook.pdf",
+            pageCount = 20,
+            currentPage = rememberedPage,
+            zoomLevel = rememberedZoom,
+            colorMode = rememberedTheme
+        )
+
+        assertEquals(7, tab.currentPage)
+        assertEquals(1.75f, tab.zoomLevel, 0.001f)
+        assertEquals(PdfColorMode.NIGHT_SLATE, tab.colorMode)
+    }
+
+    @Test
+    fun testTabToDocumentLoadStateTransitions() {
+        val loadingTab = PdfTab(
+            id = "tab-loading",
+            uri = null,
+            title = "Loading.pdf",
+            pageCount = 0,
+            isLoading = true
+        )
+        assertEquals(DocumentLoadState.Loading("Loading.pdf"), loadingTab.toDocumentLoadState())
+
+        val errorTab = loadingTab.copy(
+            isLoading = false,
+            errorMessage = "Corrupt PDF",
+            canRelocate = true
+        )
+        assertEquals(
+            DocumentLoadState.Error("Corrupt PDF", canRelocate = true),
+            errorTab.toDocumentLoadState()
+        )
+
+        val successTab = PdfTab(
+            id = "tab-ok",
+            uri = null,
+            isAsset = true,
+            title = "Ready.pdf",
+            pageCount = 12,
+            fileSizeBytes = 2048L
+        )
+        val state = successTab.toDocumentLoadState() as DocumentLoadState.Success
+        assertEquals("Ready.pdf", state.title)
+        assertEquals(12, state.pageCount)
+        assertEquals(2048L, state.fileSizeBytes)
+    }
 }
